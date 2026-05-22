@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: true,
       rollupOptions: {
-        external: ['better-sqlite3', 'keytar'],
+        external: ['better-sqlite3', 'keytar', '@napi-rs/keyring'],
       },
     },
   };

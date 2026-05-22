@@ -3,14 +3,15 @@ import fs from 'fs';
 import path from 'path';
 import { eq } from 'drizzle-orm';
 import { isString } from 'lodash-es';
-import { AccountBackupData, AccountInfo } from '../../types/account';
+import { AccountBackupData, AccountInfo, type AntigravityAppTarget } from '../../types/account';
 import { ItemTableValueRowSchema, type ItemTableKey } from '../../types/db';
 import { logger } from '../../utils/logger';
-import { getAntigravityDbPaths, getAntigravityDbPathsForEdition } from '../../utils/paths';
+import { getAntigravityDbPaths } from '../../utils/paths';
 import { parseRow } from '../../utils/sqlite';
+import { ProtobufUtils } from '../../utils/protobuf';
 import { openDrizzleConnection } from './dbConnection';
 import { itemTable } from './schema';
-import type { IdeEdition } from '../../types/config';
+import type { CredentialStoreTokenInput } from './antigravityCredentialStore';
 
 const KEYS_TO_BACKUP: ItemTableKey[] = [
   'antigravityAuthStatus',
@@ -18,7 +19,10 @@ const KEYS_TO_BACKUP: ItemTableKey[] = [
   'antigravityUnifiedStateSync.oauthToken',
 ];
 
-function openIdeDb(dbPath: string, readOnly = false): ReturnType<typeof openDrizzleConnection> {
+function openAntigravityStateDb(
+  dbPath: string,
+  readOnly = false,
+): ReturnType<typeof openDrizzleConnection> {
   return openDrizzleConnection(
     dbPath,
     { readonly: readOnly, fileMustExist: false },
@@ -30,16 +34,14 @@ function openIdeDb(dbPath: string, readOnly = false): ReturnType<typeof openDriz
  * Initializes the database and ensures WAL mode is enabled.
  * Should be called on application startup.
  */
-export function initDatabase(edition?: IdeEdition): void {
+export function initDatabase(): void {
   try {
-    const dbPaths = edition
-      ? getAntigravityDbPathsForEdition(edition)
-      : getAntigravityDbPaths();
+    const dbPaths = getAntigravityDbPaths();
     if (dbPaths.length === 0) {
       return;
     }
 
-    const { raw } = getDatabaseConnection(undefined, edition);
+    const { raw } = getDatabaseConnection(undefined);
     raw.close();
     logger.info('Database initialized and verified (WAL mode)');
   } catch (error) {
@@ -86,14 +88,10 @@ function ensureDatabaseExists(dbPath: string): void {
 /**
  * Gets a database connection.
  * @param dbPath {string} The path to the database file.
- * @param edition {IdeEdition} The IDE edition to use for path resolution.
  * @returns {ReturnType<typeof openDrizzleConnection>} The database connection.
  */
-export function getDatabaseConnection(
-  dbPath?: string,
-  edition?: IdeEdition,
-): ReturnType<typeof openDrizzleConnection> {
-  const targetPath = dbPath || (edition ? getAntigravityDbPathsForEdition(edition) : getAntigravityDbPaths())[0];
+export function getDatabaseConnection(dbPath?: string): ReturnType<typeof openDrizzleConnection> {
+  const targetPath = dbPath || getAntigravityDbPaths()[0];
 
   if (!targetPath) {
     throw new Error('No Antigravity database path found');
@@ -102,7 +100,7 @@ export function getDatabaseConnection(
   ensureDatabaseExists(targetPath);
 
   try {
-    return openIdeDb(targetPath);
+    return openAntigravityStateDb(targetPath);
   } catch (error: unknown) {
     const err = error as { code?: string };
     if (err.code === 'SQLITE_BUSY' || err.code === 'SQLITE_LOCKED') {
@@ -130,11 +128,11 @@ function readItemValue(
  * Gets the current account info.
  * @returns {AccountInfo} The current account info.
  */
-export function getCurrentAccountInfo(edition?: IdeEdition): AccountInfo {
+export function getCurrentAccountInfo(): AccountInfo {
   // NOTE Database existence is now handled by getDatabaseConnection
   let connection: ReturnType<typeof openDrizzleConnection> | null = null;
   try {
-    connection = getDatabaseConnection(undefined, edition);
+    connection = getDatabaseConnection(undefined);
     const { orm } = connection;
 
     // Query for auth status
@@ -232,13 +230,10 @@ export function getCurrentAccountInfo(edition?: IdeEdition): AccountInfo {
   }
 }
 
-export function backupAccount(
-  account: AccountBackupData['account'],
-  edition?: IdeEdition,
-): AccountBackupData {
+export function backupAccount(account: AccountBackupData['account']): AccountBackupData {
   let connection: ReturnType<typeof openDrizzleConnection> | null = null;
   try {
-    connection = getDatabaseConnection(undefined, edition);
+    connection = getDatabaseConnection(undefined);
     const { orm } = connection;
 
     // NOTE Backup only specific keys
@@ -282,10 +277,28 @@ export function backupAccount(
  * @param backup {AccountBackupData} The backup data to restore.
  * @throws {Error} If the backup data cannot be restored.
  */
-export function restoreAccount(backup: AccountBackupData, edition?: IdeEdition): void {
-  const dbPaths = edition
-    ? getAntigravityDbPathsForEdition(edition)
-    : getAntigravityDbPaths();
+export function extractCredentialStoreTokenFromBackup(
+  backup: AccountBackupData,
+): CredentialStoreTokenInput {
+  const unified = backup.data['antigravityUnifiedStateSync.oauthToken'];
+  if (!isString(unified)) {
+    throw new Error('Backup does not contain antigravityUnifiedStateSync.oauthToken');
+  }
+
+  const parsed = ProtobufUtils.extractOAuthTokenDetailsFromUnifiedStateEntry(unified);
+  if (!parsed) {
+    throw new Error('Unable to extract OAuth token from backup');
+  }
+
+  return {
+    access_token: parsed.accessToken,
+    refresh_token: parsed.refreshToken,
+    expiry_timestamp: parsed.expiryTimestamp,
+  };
+}
+
+export function restoreAccount(backup: AccountBackupData, appTarget?: AntigravityAppTarget): void {
+  const dbPaths = getAntigravityDbPaths(appTarget);
   if (dbPaths.length === 0) {
     throw new Error('No Antigravity database paths found');
   }
@@ -294,14 +307,14 @@ export function restoreAccount(backup: AccountBackupData, edition?: IdeEdition):
 
   for (const dbPath of dbPaths) {
     // NOTE Restore main DB
-    if (_restoreSingleDb(dbPath, backup)) {
+    if (restoreSingleDatabase(dbPath, backup)) {
       successCount++;
     }
 
     // NOTE Restore backup DB (if exists)
     const backupDbPath = dbPath.replace(/\.vscdb$/, '.vscdb.backup');
     if (fs.existsSync(backupDbPath)) {
-      if (_restoreSingleDb(backupDbPath, backup)) {
+      if (restoreSingleDatabase(backupDbPath, backup)) {
         successCount++;
       }
     }
@@ -320,7 +333,7 @@ export function restoreAccount(backup: AccountBackupData, edition?: IdeEdition):
  * @param backup {AccountBackupData} The backup data to restore.
  * @returns {boolean} True if the database file was restored successfully, false otherwise.
  */
-function _restoreSingleDb(dbPath: string, backup: AccountBackupData): boolean {
+function restoreSingleDatabase(dbPath: string, backup: AccountBackupData): boolean {
   if (!fs.existsSync(dbPath)) {
     return false;
   }

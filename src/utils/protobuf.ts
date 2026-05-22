@@ -264,9 +264,7 @@ export class ProtobufUtils {
 
     const expiryField = this.encodeLenDelimField(4, timestampMsg);
     const idTokenField = idToken ? this.encodeStringField(5, idToken) : new Uint8Array();
-    const gcpTosField = shouldIncludeGcpTosFlag
-      ? this.encodeVarintField(6, 1)
-      : new Uint8Array();
+    const gcpTosField = shouldIncludeGcpTosFlag ? this.encodeVarintField(6, 1) : new Uint8Array();
 
     return this.concatBytes(
       accessTokenField,
@@ -323,6 +321,34 @@ export class ProtobufUtils {
       };
     }
     return null;
+  }
+
+  static extractOAuthTokenDetailsFromOAuthInfo(data: Uint8Array): {
+    accessToken: string;
+    refreshToken: string;
+    expiryTimestamp: number;
+    idToken?: string;
+  } | null {
+    const accessTokenBytes = this.getField(data, 1);
+    const refreshTokenBytes = this.getField(data, 3);
+    const expiryBytes = this.getField(data, 4);
+    const idTokenBytes = this.getField(data, 5);
+
+    if (!accessTokenBytes || !refreshTokenBytes || !expiryBytes) {
+      return null;
+    }
+
+    const expiryTimestamp = this.findVarintField(expiryBytes, 1);
+    if (!expiryTimestamp) {
+      return null;
+    }
+
+    return {
+      accessToken: this.readString(accessTokenBytes),
+      refreshToken: this.readString(refreshTokenBytes),
+      expiryTimestamp,
+      idToken: idTokenBytes ? this.readString(idTokenBytes) : undefined,
+    };
   }
 
   static extractOAuthTokenInfoFromUnifiedState(
@@ -506,5 +532,41 @@ export class ProtobufUtils {
     return this.extractOAuthTokenInfoFromUnifiedState(
       new Uint8Array(Buffer.from(outerB64, 'base64')),
     );
+  }
+
+  static extractOAuthTokenDetailsFromUnifiedStateEntry(outerB64: string): {
+    accessToken: string;
+    refreshToken: string;
+    expiryTimestamp: number;
+    idToken?: string;
+  } | null {
+    let decoded: { sentinelKey: string; payload: Uint8Array };
+    try {
+      decoded = this.decodeUnifiedStateEntry(outerB64);
+    } catch {
+      return null;
+    }
+
+    if (decoded.sentinelKey !== 'oauthTokenInfoSentinelKey') {
+      return null;
+    }
+
+    const directParsed = this.extractOAuthTokenDetailsFromOAuthInfo(decoded.payload);
+    if (directParsed) {
+      return directParsed;
+    }
+    const nestedOauthInfoB64Bytes = this.getField(decoded.payload, 1);
+    if (!nestedOauthInfoB64Bytes) {
+      return null;
+    }
+
+    try {
+      const nestedOauthInfoBytes = new Uint8Array(
+        Buffer.from(this.readString(nestedOauthInfoB64Bytes), 'base64'),
+      );
+      return this.extractOAuthTokenDetailsFromOAuthInfo(nestedOauthInfoBytes);
+    } catch {
+      return null;
+    }
   }
 }

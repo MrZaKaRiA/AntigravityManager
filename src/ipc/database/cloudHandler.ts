@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { desc, eq } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { isNumber, isObjectLike, isPlainObject, isString } from 'lodash-es';
-import { getCloudAccountsDbPath, getAntigravityDbPaths, getAntigravityDbPathsForEdition } from '../../utils/paths';
+import { getCloudAccountsDbPath, getAntigravityDbPaths } from '../../utils/paths';
 import { logger } from '../../utils/logger';
 import {
   CloudAccount,
@@ -13,17 +13,26 @@ import {
   CloudQuotaDataSchema,
   CloudTokenDataSchema,
 } from '../../types/cloudAccount';
-import { type DeviceProfile, type DeviceProfileVersion } from '../../types/account';
+import {
+  type AntigravityAppTarget,
+  type DeviceProfile,
+  type DeviceProfileVersion,
+  resolveAntigravityAppTarget,
+} from '../../types/account';
 import { ItemTableValueRowSchema, TableInfoRowSchema } from '../../types/db';
 import { decryptWithMigration, encrypt, type KeySource } from '../../utils/security';
 import { ProtobufUtils } from '../../utils/protobuf';
 import { GoogleAPIService } from '../../services/GoogleAPIService';
-import { getAntigravityVersion, isNewVersion } from '../../utils/antigravityVersion';
+import {
+  getAntigravityVersion,
+  isCredentialStoreVersion,
+  isNewVersion,
+} from '../../utils/antigravityVersion';
 import { parseRow, parseRows } from '../../utils/sqlite';
 import { configureDatabase, openDrizzleConnection } from './dbConnection';
+import { writeAntigravityCredentialStoreToken } from './antigravityCredentialStore';
 import { accounts, itemTable, settings } from './schema';
 import * as drizzleSchema from './schema';
-import type { IdeEdition } from '../../types/config';
 
 const SQLITE_BUSY_CODES = new Set(['SQLITE_BUSY', 'SQLITE_LOCKED']);
 const SQLITE_BUSY_TIMEOUT_MS = 3000;
@@ -459,8 +468,8 @@ export class CloudAccountRepo {
           logger.info(`Migrated account ${row.id} to encrypted storage`);
         }
       }
-    } catch (e) {
-      logger.error('Failed to migrate data', e);
+    } catch (error) {
+      logger.error('Failed to migrate data', error);
     } finally {
       raw.close();
     }
@@ -492,16 +501,17 @@ export class CloudAccountRepo {
         proxyUrl: account.proxy_url ?? null,
       };
 
-      orm.transaction((tx) => {
+      orm.transaction((transaction) => {
         // If this account is being set to active, deactivate all others first
         if (account.is_active) {
-          logger.info(
-            `[DEBUG] addAccount: Deactivating all other accounts because ${account.email} is active`,
+          logger.debug(
+            `Deactivating other cloud accounts because ${account.email} is being marked active`,
           );
-          const info = tx.update(accounts).set({ isActive: 0 }).run();
-          logger.info(`[DEBUG] addAccount: Deactivation changed ${info.changes} rows`);
+          const deactivationResult = transaction.update(accounts).set({ isActive: 0 }).run();
+          logger.debug(`Deactivated ${deactivationResult.changes} cloud account rows`);
         }
-        tx.insert(accounts)
+        transaction
+          .insert(accounts)
           .values(values)
           .onConflictDoUpdate({
             target: accounts.id,
@@ -522,12 +532,9 @@ export class CloudAccountRepo {
     try {
       const rows = orm.select().from(accounts).orderBy(desc(accounts.lastUsed)).all();
 
-      // DEBUG LOGS
-      const activeRows = rows.filter((r) => r.isActive);
-      logger.info(
-        `[DEBUG] getAccounts: Found ${rows.length} accounts, ${activeRows.length} active.`,
-      );
-      activeRows.forEach((r) => logger.info(`[DEBUG] Active Account: ${r.email} (${r.id})`));
+      const activeRows = rows.filter((row) => row.isActive);
+      logger.debug(`Loaded ${rows.length} cloud accounts; ${activeRows.length} are active.`);
+      activeRows.forEach((row) => logger.debug(`Active cloud account: ${row.email} (${row.id})`));
 
       const cloudAccounts: CloudAccount[] = [];
       for (const normalizedRow of rows) {
@@ -973,9 +980,9 @@ export class CloudAccountRepo {
     const { raw, orm } = getCloudDb();
 
     try {
-      orm.transaction((tx) => {
-        tx.update(accounts).set({ isActive: 0 }).run();
-        tx.update(accounts).set({ isActive: 1 }).where(eq(accounts.id, id)).run();
+      orm.transaction((transaction) => {
+        transaction.update(accounts).set({ isActive: 0 }).run();
+        transaction.update(accounts).set({ isActive: 1 }).where(eq(accounts.id, id)).run();
       });
       logger.info(`Set account ${id} as active`);
     } finally {
@@ -1017,8 +1024,10 @@ export class CloudAccountRepo {
   }
 
   static async getAccountByEmail(email: string): Promise<CloudAccount | null> {
-    const all = await this.getAccounts();
-    return all.find((a) => a.email.toLowerCase() === email.toLowerCase()) || null;
+    const allAccounts = await this.getAccounts();
+    return (
+      allAccounts.find((account) => account.email.toLowerCase() === email.toLowerCase()) || null
+    );
   }
 
   private static upsertItemValue(db: DrizzleExecutor, key: string, value: string): void {
@@ -1080,22 +1089,27 @@ export class CloudAccountRepo {
     );
     const normalizedProjectId = account.token.project_id?.trim();
 
-    orm.transaction((tx) => {
-      this.upsertItemValue(tx, 'antigravityUnifiedStateSync.oauthToken', oauthToken);
-      this.upsertItemValue(tx, 'antigravityUnifiedStateSync.userStatus', userStatusEntry);
+    orm.transaction((transaction) => {
+      this.upsertItemValue(transaction, 'antigravityUnifiedStateSync.oauthToken', oauthToken);
+      this.upsertItemValue(transaction, 'antigravityUnifiedStateSync.userStatus', userStatusEntry);
       if (normalizedProjectId) {
         const projectPayload = ProtobufUtils.createStringValuePayload(normalizedProjectId);
         const projectEntry = ProtobufUtils.createUnifiedStateEntry(
           'enterpriseGcpProjectId',
           projectPayload,
         );
-        this.upsertItemValue(tx, 'antigravityUnifiedStateSync.enterprisePreferences', projectEntry);
+        this.upsertItemValue(
+          transaction,
+          'antigravityUnifiedStateSync.enterprisePreferences',
+          projectEntry,
+        );
       } else {
-        tx.delete(itemTable)
+        transaction
+          .delete(itemTable)
           .where(eq(itemTable.key, 'antigravityUnifiedStateSync.enterprisePreferences'))
           .run();
       }
-      this.writeAuthStatusAndCleanup(tx, account);
+      this.writeAuthStatusAndCleanup(transaction, account);
     });
   }
 
@@ -1103,20 +1117,20 @@ export class CloudAccountRepo {
     orm: BetterSQLite3Database<typeof drizzleSchema>,
     account: CloudAccount,
   ): void {
-    const value = this.getItemValue(
+    const encodedAgentState = this.getItemValue(
       orm,
       'jetskiStateSync.agentManagerInitState',
       'ide.itemTable.jetskiStateSync.agentManagerInitState',
     );
 
-    orm.transaction((tx) => {
-      if (!value) {
+    orm.transaction((transaction) => {
+      if (!encodedAgentState) {
         logger.warn(
           'jetskiStateSync.agentManagerInitState not found. ' +
             'Injecting minimal auth state only. User may need to complete onboarding in the IDE first.',
         );
 
-        this.writeAuthStatusAndCleanup(tx, account);
+        this.writeAuthStatusAndCleanup(transaction, account);
 
         logger.info(
           `Injected minimal auth state for ${account.email} (no protobuf state available)`,
@@ -1124,27 +1138,30 @@ export class CloudAccountRepo {
         return;
       }
 
-      const buffer = Buffer.from(value, 'base64');
-      const data = new Uint8Array(buffer);
-      const cleanData = ProtobufUtils.removeField(data, 6);
-      const newField = ProtobufUtils.createOAuthTokenInfo(
+      const encodedStateBuffer = Buffer.from(encodedAgentState, 'base64');
+      const agentStateBytes = new Uint8Array(encodedStateBuffer);
+      const stateWithoutPreviousToken = ProtobufUtils.removeField(agentStateBytes, 6);
+      const oauthTokenField = ProtobufUtils.createOAuthTokenInfo(
         account.token.access_token,
         account.token.refresh_token,
         account.token.expiry_timestamp,
       );
 
-      const finalData = new Uint8Array(cleanData.length + newField.length);
-      finalData.set(cleanData, 0);
-      finalData.set(newField, cleanData.length);
+      const updatedAgentStateBytes = new Uint8Array(
+        stateWithoutPreviousToken.length + oauthTokenField.length,
+      );
+      updatedAgentStateBytes.set(stateWithoutPreviousToken, 0);
+      updatedAgentStateBytes.set(oauthTokenField, stateWithoutPreviousToken.length);
 
-      const finalB64 = Buffer.from(finalData).toString('base64');
+      const updatedEncodedAgentState = Buffer.from(updatedAgentStateBytes).toString('base64');
 
-      tx.update(itemTable)
-        .set({ value: finalB64 })
+      transaction
+        .update(itemTable)
+        .set({ value: updatedEncodedAgentState })
         .where(eq(itemTable.key, 'jetskiStateSync.agentManagerInitState'))
         .run();
 
-      this.writeAuthStatusAndCleanup(tx, account);
+      this.writeAuthStatusAndCleanup(transaction, account);
     });
   }
 
@@ -1173,12 +1190,31 @@ export class CloudAccountRepo {
     return null;
   }
 
-  private static resolveInjectionStrategy(db: DrizzleExecutor): {
+  static shouldInjectTokenIntoCredentialStore(appTarget?: AntigravityAppTarget): boolean {
+    if (resolveAntigravityAppTarget(appTarget) === 'ide') {
+      return false;
+    }
+
+    try {
+      return isCredentialStoreVersion(getAntigravityVersion(appTarget));
+    } catch (error) {
+      logger.warn(
+        'Version detection failed; defaulting to credential store for Classic Antigravity',
+        error,
+      );
+      return true;
+    }
+  }
+
+  private static resolveInjectionStrategy(
+    db: DrizzleExecutor,
+    appTarget?: AntigravityAppTarget,
+  ): {
     name: 'new' | 'old' | 'dual';
     reason: string;
   } {
     try {
-      const version = getAntigravityVersion();
+      const version = getAntigravityVersion(appTarget);
       return {
         name: isNewVersion(version) ? 'new' : 'old',
         reason: `version:${version.shortVersion}`,
@@ -1211,12 +1247,13 @@ export class CloudAccountRepo {
   private static injectWithRetry(
     dbPath: string,
     account: CloudAccount,
+    appTarget?: AntigravityAppTarget,
   ): { strategy: string; attempts: number } {
     let lastError: unknown;
     for (let attempt = 1; attempt <= SQLITE_MAX_RETRIES; attempt += 1) {
       const { raw, orm } = getIdeDb(dbPath, false);
       try {
-        const { name, reason } = this.resolveInjectionStrategy(orm);
+        const { name, reason } = this.resolveInjectionStrategy(orm, appTarget);
         if (name === 'dual') {
           let newInjected = false;
           let oldInjected = false;
@@ -1261,20 +1298,31 @@ export class CloudAccountRepo {
     throw lastError;
   }
 
-  static injectCloudToken(account: CloudAccount, edition?: IdeEdition): void {
-    const dbPaths = edition
-      ? getAntigravityDbPathsForEdition(edition)
-      : getAntigravityDbPaths();
-    const dbPath = dbPaths.find((p) => fs.existsSync(p)) ?? null;
+  static injectCloudToken(account: CloudAccount, appTarget?: AntigravityAppTarget): void {
+    const dbPaths = getAntigravityDbPaths(appTarget);
+    const dbPath = dbPaths.find((candidatePath) => fs.existsSync(candidatePath)) ?? null;
 
     if (!dbPath) {
       throw new Error(`Antigravity database not found. Checked paths: ${dbPaths.join(', ')}`);
     }
 
-    const result = this.injectWithRetry(dbPath, account);
+    const result = this.injectWithRetry(dbPath, account, appTarget);
     logger.info(
       `Successfully injected cloud token and identity for ${account.email} into Antigravity database at ${dbPath} (strategy=${result.strategy}, attempts=${result.attempts}).`,
     );
+  }
+
+  static injectCloudTokenWithStorageStrategy(
+    account: CloudAccount,
+    appTarget?: AntigravityAppTarget,
+  ): 'credential-store' | 'sqlite' {
+    if (this.shouldInjectTokenIntoCredentialStore(appTarget)) {
+      writeAntigravityCredentialStoreToken(account.token);
+      return 'credential-store';
+    }
+
+    this.injectCloudToken(account, appTarget);
+    return 'sqlite';
   }
 
   static getSetting<T>(key: string, defaultValue: T): T {
@@ -1290,15 +1338,15 @@ export class CloudAccountRepo {
         return defaultValue;
       }
       return JSON.parse(row.value) as T;
-    } catch (e) {
-      logger.error(`Failed to get setting ${key}`, e);
+    } catch (error) {
+      logger.error(`Failed to get setting ${key}`, error);
       return defaultValue;
     } finally {
       raw.close();
     }
   }
 
-  static setSetting(key: string, value: any): void {
+  static setSetting(key: string, value: unknown): void {
     const { raw, orm } = getCloudDb();
     try {
       const stringValue = JSON.stringify(value);
@@ -1340,29 +1388,29 @@ export class CloudAccountRepo {
     }
 
     if (!tokenInfo) {
-      const value = this.getItemValue(
+      const encodedLegacyState = this.getItemValue(
         db,
         'jetskiStateSync.agentManagerInitState',
         'ide.itemTable.jetskiStateSync.agentManagerInitState',
       );
 
-      if (!value) {
-        const errorMsg =
+      if (!encodedLegacyState) {
+        const message =
           'No cloud account found in IDE. Please login to a Google account in Antigravity IDE first.';
-        logger.warn(`SyncLocal: ${errorMsg}`);
-        throw new Error(errorMsg);
+        logger.warn(`SyncLocal: ${message}`);
+        throw new Error(message);
       }
 
-      const buffer = Buffer.from(value, 'base64');
-      const data = new Uint8Array(buffer);
-      tokenInfo = ProtobufUtils.extractOAuthTokenInfo(data);
+      const legacyStateBuffer = Buffer.from(encodedLegacyState, 'base64');
+      const legacyStateBytes = new Uint8Array(legacyStateBuffer);
+      tokenInfo = ProtobufUtils.extractOAuthTokenInfo(legacyStateBytes);
     }
 
     if (!tokenInfo) {
-      const errorMsg =
+      const message =
         'No OAuth token found in IDE state. Please login to a Google account in Antigravity IDE first.';
-      logger.warn(`SyncLocal: ${errorMsg}`);
-      throw new Error(errorMsg);
+      logger.warn(`SyncLocal: ${message}`);
+      throw new Error(message);
     }
 
     return {
@@ -1432,57 +1480,52 @@ export class CloudAccountRepo {
     }
   }
 
-  static async syncFromIDE(edition?: IdeEdition): Promise<CloudAccount | null> {
+  static async syncFromIde(): Promise<CloudAccount | null> {
     // Try all possible database paths
-    const dbPaths = edition
-      ? getAntigravityDbPathsForEdition(edition)
-      : getAntigravityDbPaths();
+    const dbPaths = getAntigravityDbPaths();
     logger.info(`SyncLocal: Checking database paths: ${JSON.stringify(dbPaths)}`);
 
     const dbPath =
-      dbPaths.find((p) => {
-        logger.info(`SyncLocal: Checking path: ${p}, exists: ${fs.existsSync(p)}`);
-        return fs.existsSync(p);
+      dbPaths.find((candidatePath) => {
+        const pathExists = fs.existsSync(candidatePath);
+        logger.info(`SyncLocal: Checking path: ${candidatePath}, exists: ${pathExists}`);
+        return pathExists;
       }) ?? null;
 
     if (!dbPath) {
-      const errorMsg = `Antigravity database not found. Please ensure Antigravity IDE is installed. Checked paths: ${dbPaths.join(', ')}`;
-      logger.error(errorMsg);
-      throw new Error(errorMsg);
+      const message = `Antigravity database not found. Please ensure Antigravity IDE is installed. Checked paths: ${dbPaths.join(', ')}`;
+      logger.error(message);
+      throw new Error(message);
     }
 
     logger.info(`SyncLocal: Using Antigravity database at: ${dbPath}`);
     try {
       const tokenInfo = this.readTokenInfoWithRetry(dbPath);
 
-      // 3. Fetch User Info
-      // We need to fetch user info to know who this token belongs to
-      let userInfo;
+      let googleUserInfo;
       try {
-        userInfo = await GoogleAPIService.getUserInfo(tokenInfo.accessToken);
-      } catch (apiError: any) {
-        const errorMsg = `Failed to validate token with Google API. The token may be expired. Please re-login in Antigravity IDE. Error: ${apiError.message}`;
-        logger.error(`SyncLocal: ${errorMsg}`, apiError);
-        throw new Error(errorMsg);
+        googleUserInfo = await GoogleAPIService.getUserInfo(tokenInfo.accessToken);
+      } catch (apiError: unknown) {
+        const apiErrorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+        const message = `Failed to validate token with Google API. The token may be expired. Please re-login in Antigravity IDE. Error: ${apiErrorMessage}`;
+        logger.error(`SyncLocal: ${message}`, apiError);
+        throw new Error(message);
       }
 
-      // 4. Check Duplicate & Construct Account
-      // We use existing addAccount logic which does UPSERT (REPLACE)
-      // Construct CloudAccount object
       const now = Math.floor(Date.now() / 1000);
       const account: CloudAccount = {
         id: uuidv4(), // Generate new ID if new, but check existing email
         provider: 'google',
-        email: userInfo.email,
-        name: userInfo.name,
-        avatar_url: userInfo.picture,
+        email: googleUserInfo.email,
+        name: googleUserInfo.name,
+        avatar_url: googleUserInfo.picture,
         token: {
           access_token: tokenInfo.accessToken,
           refresh_token: tokenInfo.refreshToken,
           expires_in: 3600, // Unknown, assume 1 hour validity or let it refresh
           expiry_timestamp: now + 3600,
           token_type: 'Bearer',
-          email: userInfo.email,
+          email: googleUserInfo.email,
           project_id: tokenInfo.projectId,
           is_gcp_tos: false,
           id_token: tokenInfo.idToken,
@@ -1495,30 +1538,30 @@ export class CloudAccountRepo {
 
       // Check if email already exists to preserve ID
       const accounts = await this.getAccounts();
-      const existing = accounts.find((a) => a.email === account.email);
-      if (existing) {
-        const existingProjectId = existing.token.project_id?.trim();
+      const existingAccount = accounts.find((savedAccount) => savedAccount.email === account.email);
+      if (existingAccount) {
+        const existingProjectId = existingAccount.token.project_id?.trim();
 
-        account.id = existing.id; // Keep existing ID
-        account.created_at = existing.created_at;
-        account.name = account.name ?? existing.name;
-        account.avatar_url = account.avatar_url ?? existing.avatar_url;
-        account.proxy_url = existing.proxy_url;
-        account.device_profile = existing.device_profile;
-        account.device_history = existing.device_history;
+        account.id = existingAccount.id; // Keep existing ID
+        account.created_at = existingAccount.created_at;
+        account.name = account.name ?? existingAccount.name;
+        account.avatar_url = account.avatar_url ?? existingAccount.avatar_url;
+        account.proxy_url = existingAccount.proxy_url;
+        account.device_profile = existingAccount.device_profile;
+        account.device_history = existingAccount.device_history;
         account.status = 'active';
         account.status_reason = undefined;
         account.token = {
-          ...existing.token,
+          ...existingAccount.token,
           access_token: tokenInfo.accessToken,
-          refresh_token: tokenInfo.refreshToken || existing.token.refresh_token,
+          refresh_token: tokenInfo.refreshToken || existingAccount.token.refresh_token,
           expires_in: 3600,
           expiry_timestamp: now + 3600,
           token_type: 'Bearer',
-          email: userInfo.email,
+          email: googleUserInfo.email,
           project_id: existingProjectId || tokenInfo.projectId,
-          is_gcp_tos: existing.token.is_gcp_tos ?? false,
-          id_token: tokenInfo.idToken ?? existing.token.id_token,
+          is_gcp_tos: existingAccount.token.is_gcp_tos ?? false,
+          id_token: tokenInfo.idToken ?? existingAccount.token.id_token,
         };
       }
 
