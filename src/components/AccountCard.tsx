@@ -176,7 +176,7 @@ export const AccountCard: React.FC<AccountCardProps> = ({
                   disabled={isSwitching}
                 >
                   <ArrowRightLeft className="mr-2 h-4 w-4" />
-                  {t('account.switchToClassic', 'Switch to Antigravity (Classic)')}
+                  {t('account.switchToAntigravity', 'Switch to Antigravity')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={(e) => {

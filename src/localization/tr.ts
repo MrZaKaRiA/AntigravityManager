@@ -59,6 +59,8 @@ const tr = {
   account: {
     current: 'Mevcut',
     lastUsed: 'Son kullanım: {{time}}',
+    switchToAntigravity: "Antigravity'ye Geç",
+    switchToIde: "Antigravity IDE'ye Geç",
   },
   home: {
     title: 'Hesaplar',

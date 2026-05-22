@@ -472,7 +472,7 @@ export function CloudAccountCard({
             <DropdownMenuLabel>{t('cloud.card.actions')}</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => onSwitch(account.id)} disabled={isSwitching}>
               <Power className="mr-2 h-4 w-4" />
-              {t('account.switchToClassic', 'Switch to Antigravity (Classic)')}
+              {t('account.switchToAntigravity', 'Switch to Antigravity')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onSwitch(account.id, 'ide')} disabled={isSwitching}>
               <Repeat2 className="mr-2 h-4 w-4" />
@@ -845,7 +845,7 @@ export function CompactCloudAccountCard({
             <DropdownMenuLabel>{t('cloud.card.actions')}</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => onSwitch(account.id)} disabled={isSwitching}>
               <Power className="mr-2 h-4 w-4" />
-              {t('account.switchToClassic', 'Switch to Antigravity (Classic)')}
+              {t('account.switchToAntigravity', 'Switch to Antigravity')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onSwitch(account.id, 'ide')} disabled={isSwitching}>
               <Repeat2 className="mr-2 h-4 w-4" />

@@ -59,7 +59,7 @@ const vi = {
   account: {
     current: 'Hiện tại',
     lastUsed: 'Đã dùng {{time}}',
-    switchToClassic: 'Chuyển sang Antigravity (Classic)',
+    switchToAntigravity: 'Chuyển sang Antigravity',
     switchToIde: 'Chuyển sang Antigravity IDE',
   },
   home: {

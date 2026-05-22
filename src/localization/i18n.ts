@@ -81,7 +81,7 @@ i18n
           account: {
             current: 'Current',
             lastUsed: 'Last used {{time}}',
-            switchToClassic: 'Switch to Antigravity (Classic)',
+            switchToAntigravity: 'Switch to Antigravity',
             switchToIde: 'Switch to Antigravity IDE',
           },
           home: {
@@ -593,7 +593,7 @@ i18n
           account: {
             current: '当前',
             lastUsed: '上次使用 {{time}}',
-            switchToClassic: '切换到 Antigravity（经典版）',
+            switchToAntigravity: '切换到 Antigravity',
             switchToIde: '切换到 Antigravity IDE',
           },
           home: {
@@ -1093,7 +1093,7 @@ i18n
           account: {
             current: 'Текущий',
             lastUsed: 'Последнее использование {{time}}',
-            switchToClassic: 'Переключиться на Antigravity (Classic)',
+            switchToAntigravity: 'Переключиться на Antigravity',
             switchToIde: 'Переключиться на Antigravity IDE',
           },
           home: {
