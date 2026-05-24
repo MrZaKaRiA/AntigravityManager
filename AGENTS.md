@@ -11,7 +11,7 @@ This document is a user-level guide for AI assistants working in this repository
 ## 💻 Runtime and Tooling
 
 - **Runtime**: Node.js (Electron environment)
-- **Node**: Recommended Node.js 20+
+- **Node**: Node.js `>=22.14.0` and npm `>=10` (matches `package.json`)
 - **Package manager**: `npm` (this project includes `package-lock.json`; use npm only)
 - **Build tools**: Electron Forge + Vite
 - **Terminal**: Windows (PowerShell) / VSCode MCP tools can be used safely
@@ -20,19 +20,22 @@ This document is a user-level guide for AI assistants working in this repository
 
 - **Frontend**:
   - React 19, TypeScript
+  - React Compiler via `babel-plugin-react-compiler`
   - Tailwind CSS v4, `clsx`, `tailwind-merge`, `tailwindcss-animate`
   - Radix UI (Primitives), Lucide React (Icons), Simple Icons (`@icons-pack/react-simple-icons`)
   - `class-variance-authority` (CVA), `react-i18next` + `i18next`
   - TanStack Router (Routing), TanStack Query (State Management)
-  - Components: Modular design under `src/components`
+  - Feature UI lives inside `src/modules/*/components`; generic UI lives under `src/components`
 - **Backend (Electron Main/Server)**:
   - Electron (Main/Preload/Renderer architecture)
-  - NestJS (internal proxy/gateway service, started by main process)
+  - NestJS + Fastify (internal proxy/gateway service, started by the main process)
   - Better-SQLite3 (local database), Drizzle ORM / Raw SQL
   - ORPC (type-safe RPC)
   - gRPC (`@grpc/grpc-js`, `@grpc/proto-loader`)
+  - OS credential storage via `@napi-rs/keyring` / `keytar`
   - Logging: `winston` + `winston-daily-rotate-file`
-  - Zod (validation)
+  - Validation: Zod plus NestJS `class-validator` / `class-transformer`
+  - Observability: Sentry for Electron/renderer builds
 - **Testing**:
   - Vitest (unit/integration), Testing Library
   - Playwright (E2E)
@@ -42,36 +45,54 @@ This document is a user-level guide for AI assistants working in this repository
 ```plaintext
 .
 ├─ src/
-│  ├─ actions/           # App actions and flow orchestration
 │  ├─ assets/            # Static assets
-│  ├─ components/        # React UI components (base components under ui/)
-│  ├─ constants/         # Constants
-│  ├─ hooks/             # Custom React hooks
-│  ├─ ipc/               # Electron IPC logic (Database, Config, etc.)
-│  ├─ layouts/           # Layout components
-│  ├─ lib/               # Shared low-level utilities
+│  ├─ components/        # App-wide generic React components
+│  │  ├─ layout/         # Shared layout primitives
+│  │  ├─ shared/         # Cross-feature shared components/providers
+│  │  └─ ui/             # Base UI primitives
+│  ├─ ipc/               # ORPC bridge composition and main-process handler
 │  ├─ localization/      # i18n translation resources
 │  ├─ mocks/             # Mock data for tests and development
+│  ├─ modules/           # Feature modules and vertical slices
+│  │  ├─ account/        # Local account snapshots and account UI
+│  │  ├─ antigravity-runtime/ # Antigravity process/startup/switching logic
+│  │  ├─ app-shell/      # App shell actions, routing, tray, theme, window/system IPC
+│  │  ├─ cloud-account/  # Cloud auth, account monitoring, quota, persistence
+│  │  ├─ config/         # App configuration types, hooks, components, IPC
+│  │  ├─ identity-profile/ # Identity profile dialog and IPC
+│  │  └─ proxy-gateway/  # Local API proxy, model mapping, gateway IPC/server logic
 │  ├─ routes/            # TanStack Router route definitions
-│  ├─ server/            # NestJS backend logic (Gateway/Proxy)
-│  ├─ services/          # Service layer
+│  ├─ server/            # NestJS bootstrap and server entry points
+│  ├─ shared/            # Cross-cutting constants, logging, persistence, platform, security, serialization, utils
 │  ├─ styles/            # Global styles (Tailwind classes)
 │  ├─ tests/             # Test code
-│  ├─ types/             # TypeScript type definitions
-│  ├─ utils/             # Utility functions
 │  ├─ App.tsx            # React app entry
+│  ├─ instrument.ts      # Sentry/main instrumentation
 │  ├─ main.ts            # Electron main entry
 │  ├─ preload.ts         # Electron preload script
-│  └─ renderer.ts        # Electron renderer entry
+│  ├─ renderer.ts        # Electron renderer entry
+│  ├─ routeTree.gen.ts   # Generated TanStack Router tree
+│  └─ types.d.ts         # Global renderer/main type declarations
+├─ docs/                 # User/debugging documentation and screenshots
+├─ scripts/              # Build/release/helper scripts
+├─ types/                # External/global declaration files
+├─ vite.main.config.mts
+├─ vite.preload.config.mts
+├─ vite.renderer.config.mts
+├─ vitest.config.mjs
 ├─ forge.config.ts       # Electron Forge config
 └─ package.json
 ```
 
-## 🧱 Component Architecture
+## 🧱 Module Architecture
 
-- **Modular components**: Each component should have its own directory, with at least a `.tsx` file and optional styles/subcomponents.
-- **Shared capabilities**: General helpers in `src/utils/`; low-level shared wrappers in `src/lib/`.
-- **Service layer**: Centralize data access in `src/services/` or `src/ipc/`; frontend should consume IPC or RPC only.
+- **Feature-first modules**: Put feature-specific actions, components, hooks, IPC handlers, persistence, services, server code, types, and utilities under the owning `src/modules/<feature>/` directory.
+- **Shared capabilities**: Put cross-feature constants, logging, database, platform paths, security, serialization, UI helpers, and generic utilities under `src/shared/`.
+- **Generic components**: Use `src/components/ui`, `src/components/shared`, and `src/components/layout` only for reusable UI that is not owned by a single feature.
+- **IPC composition**: Add module routers under the owning module, then compose them in `src/ipc/router.ts`; keep the main-process ORPC bridge in `src/ipc/handler.ts` and `src/ipc/manager.ts`.
+- **Server code**: Keep NestJS proxy/gateway implementation under `src/modules/proxy-gateway/server/`; keep process bootstrap in `src/server/`.
+- **Routes**: Route files live in `src/routes/`; route creation is centralized in `src/modules/app-shell/routing/routes.ts`. Do not manually edit `src/routeTree.gen.ts`.
+- **Data access**: Database primitives live in `src/shared/persistence/database/`; feature-specific repositories/persistence live in the owning module.
 
 ## 📦 Common Scripts
 
@@ -98,27 +119,31 @@ Use `npm` for all commands:
 
 ### Running a Single Test
 
-- Unit test: `npm run test:unit path/to/test.test.ts`
-- E2E test: `npm run test:e2e path/to/test.spec.ts`
+- Unit test: `npm run test:unit -- path/to/test.test.ts`
+- E2E test: `npm run test:e2e -- path/to/test.spec.ts`
 - Type check: `npm run type-check`
 
 ## 🧪 Development Notes
 
 - **Build**: Build stage may ignore TS/ESLint errors depending on project/CI configuration.
 - **DevTools**: `code-inspector-plugin` is integrated; use `Shift + Click` on page elements to jump to source code.
-- **React**: React Strict Mode is disabled.
-- **NestJS**: Runs as an Electron child process; logs are visible in main-process console.
+- **React**: React Strict Mode is enabled in `src/App.tsx`.
+- **Routing**: TanStack Router generates `src/routeTree.gen.ts` from `src/routes/`.
+- **NestJS**: The proxy/gateway service is bootstrapped by the Electron main process; logs are visible in the main-process console.
+- **Sentry**: Production renderer builds enable Sentry only when the related environment variables/tokens are present.
 
 ## Security and Data
 
 - **Security**: Never commit secrets; use environment variables for sensitive config; validate all user input; encrypt sensitive data.
-- **Database**: Use Better-SQLite3; encapsulate operations in services layer; always use prepared statements; test DB operations independently.
+- **Database**: Use Better-SQLite3 through `src/shared/persistence/database/`; encapsulate feature-specific persistence in the owning module; always use prepared statements; test DB operations independently.
+- **Credentials**: Store sensitive account credentials in the OS keyring or encrypted storage helpers; never write plaintext secrets to logs, IPC packets, or fixtures.
 - **i18n**: Use `react-i18next`; keys should use kebab-case; translation files are stored in `src/localization/`.
 
 ## 📝 Conventions
 
 - **File naming**:
   - Components: PascalCase (for example, `Button.tsx`)
+  - Feature services: PascalCase when matching existing class files (for example, `GoogleAPIService.ts`, `CloudMonitorService.ts`)
   - Tools/config: camelCase or kebab-case
 - **Import paths**: Use `@/` alias for `src/`.
 - **Type safety**: Avoid `any`; enforce end-to-end type safety with Zod + TypeScript.
@@ -127,7 +152,7 @@ Use `npm` for all commands:
 - **Component design**:
   - Prefer Radix UI Primitives.
   - Use Tailwind utility classes; avoid CSS Modules unless necessary.
-- **API communication**: Frontend should prioritize ORPC client or IPC for strong type inference.
+- **API communication**: Frontend should prioritize ORPC client or Electron preload/IPC APIs for strong type inference.
 
 ### Naming Specifics
 
@@ -137,73 +162,6 @@ Use `npm` for all commands:
   - Services: `ServiceName.service.ts`
   - Types: `type-name.ts`
 
-### Import Organization
-
-```typescript
-// 1. React and core libraries
-import React, { useEffect } from 'react';
-import { createRoot } from 'react-dom/client';
-
-// 2. External dependencies (alphabetical order)
-import { useTranslation } from 'react-i18next';
-import { formatDistanceToNow } from 'date-fns';
-
-// 3. Internal imports (using @ alias)
-import { Account } from '@/types/account';
-import { Card, CardContent } from '@/components/ui/card';
-```
-
-### Component Structure
-
-```typescript
-// 1. Imports
-import React, { useState } from 'react';
-
-// 2. Type definitions
-interface ComponentProps { /* props */ }
-
-// 3. Component implementation
-export const Component: React.FC<ComponentProps> = ({ prop1 }) => {
-  // 4. Hooks
-  const { t } = useTranslation();
-  // 5. Render
-  return <div>{/* JSX */}</div>;
-};
-```
-
-> Before commit, run `npm run lint` and `npm run format`.
-
-## 📝 Terminal Output and References
-
-- Prefer code blocks; avoid Markdown tables and Mermaid unless necessary.
-- If tables are used, keep them left-aligned and check display consistency.
-
-Example:
-
-```plaintext
-+------+---------+---------+
-|  ID  |  Name   |  Role   |
-+------+---------+---------+
-|  1   |  Alice  |  Admin  |
-|  2   |  Bob    |  User   |
-+------+---------+---------+
-```
-
-### Reference Rules
-
-- External resources: use full clickable links (issues, docs, API references).
-- Source code location: use full file paths (optionally with line numbers).
-
-Example:
-
-```plaintext
-- "resolveFilePath owns this logic"
-- "VSCode has a known limitation in undo behavior"
-
-References:
-- resolveFilePath: src/utils/workspace.ts:40
-- VSCode undo limitation: https://github.com/microsoft/vscode/issues/77190
-```
 
 ## 🏷️ Markdown Writing
 
@@ -256,23 +214,6 @@ export enum BudgetType {
 - Avoid premature optimization: implement simple and direct first; optimize only when justified.
 - Always use braces for control flow (`if`, `while`, and similar statements).
 
-### Error Handling
-
-```typescript
-// Use try-catch for async operations
-try {
-  const result = await someOperation();
-  return result;
-} catch (error) {
-  console.error('Operation failed:', error);
-  throw new Error('Failed to complete operation');
-}
-
-// Use proper error typing
-if (error instanceof Error) {
-  /* handle Error instance */
-}
-```
 
 ### New Feature Implementation
 
@@ -313,37 +254,6 @@ Summary / output:
 - \[ ] Provide optimization suggestions
 - \[ ] Include full references at the end
 
-## 🔍 Code Quality and Lint
-
-- Use descriptive variable names (`mutationObserver`, `button`, `element`) and avoid `mo`, `btn`, `el`.
-- Check for missing critical comments and keep comment language consistent.
-- Use VSCode MCP diagnostics for TS/ESLint issues and fix key findings.
-- If tests are added/updated, run and fix them before submission.
-
-## ⛔ Operations Requiring Explicit Confirmation
-
-- Running destructive commands
-- Executing `git commit` or `git push`
-- Creating new test files (maintainer review required first)
-
-## 🔧 Tool Preferences and Commands
-
-Packages and scripts:
-
-- `npm install` (or `npm i`)
-
-Shell:
-
-- Run commands in repository root.
-- Quote file paths when appropriate.
-
-Web search:
-
-- Use `WebSearch` for latest information; use `mcp__SearXNG__search` when needed.
-
-Documentation/usage lookup:
-
-- Use `context7` for latest dependency usage.
 
 
 ## 🚨 Local Quality Checks (Optional Flow)
