@@ -58,6 +58,8 @@ export interface CloudAccount {
   status?: 'active' | 'rate_limited' | 'expired';
   status_reason?: string;
   is_active?: boolean;
+  is_active_classic?: boolean;
+  is_active_ide?: boolean;
   proxy_url?: string;
 }
 
@@ -114,6 +116,8 @@ export const CloudAccountSchema = z.object({
   status: z.enum(['active', 'rate_limited', 'expired']).optional(),
   status_reason: z.string().optional(),
   is_active: z.boolean().optional(),
+  is_active_classic: z.boolean().optional(),
+  is_active_ide: z.boolean().optional(),
   proxy_url: z.string().optional(),
 });
 

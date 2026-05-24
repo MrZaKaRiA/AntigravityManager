@@ -721,6 +721,104 @@ describe('cloud oauth client key backfill', () => {
     vi.restoreAllMocks();
   });
 
+  it('marks Classic active from target state when credential store mode has no SQLite account email', async () => {
+    const accounts = [
+      {
+        id: 'acc-1',
+        provider: 'google' as const,
+        email: 'first@test.dev',
+        token: {
+          access_token: 'access-1',
+          refresh_token: 'refresh-1',
+          expires_in: 3600,
+          expiry_timestamp: Math.floor(Date.now() / 1000) + 3600,
+          token_type: 'Bearer',
+          email: 'first@test.dev',
+          oauth_client_key: 'custom_a',
+        },
+        created_at: Math.floor(Date.now() / 1000),
+        last_used: Math.floor(Date.now() / 1000),
+      },
+      {
+        id: 'acc-2',
+        provider: 'google' as const,
+        email: 'second@test.dev',
+        token: {
+          access_token: 'access-2',
+          refresh_token: 'refresh-2',
+          expires_in: 3600,
+          expiry_timestamp: Math.floor(Date.now() / 1000) + 3600,
+          token_type: 'Bearer',
+          email: 'second@test.dev',
+          oauth_client_key: 'custom_a',
+        },
+        created_at: Math.floor(Date.now() / 1000),
+        last_used: Math.floor(Date.now() / 1000),
+      },
+    ];
+
+    vi.doMock('@/modules/cloud-account/persistence/cloudHandler', () => ({
+      CloudAccountRepo: {
+        getAccounts: vi.fn(async () => accounts),
+        updateToken: vi.fn(),
+        shouldInjectTokenIntoCredentialStore: vi.fn(() => true),
+        getActiveAccountIdForTarget: vi.fn((target: string) =>
+          target === 'classic' ? 'acc-2' : '',
+        ),
+        getSetting: vi.fn((key: string, defaultValue: unknown) => {
+          if (key === 'oauth_client_key_backfill_v1_done') {
+            return true;
+          }
+          return defaultValue;
+        }),
+        setSetting: vi.fn(),
+      },
+    }));
+
+    vi.doMock('@/modules/cloud-account/services/GoogleAPIService', () => ({
+      GoogleAPIService: {
+        setActiveOAuthClientKey: vi.fn(),
+        getActiveOAuthClientKey: vi.fn(() => 'custom_a'),
+      },
+    }));
+
+    vi.doMock('../../shared/logging/logger', () => ({
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      },
+    }));
+    vi.doMock('@/modules/app-shell/ipc/tray/handler', () => ({ updateTrayMenu: vi.fn() }));
+    vi.doMock('@/modules/identity-profile/ipc/handler', () => ({
+      ensureGlobalOriginalFromCurrentStorage: vi.fn(),
+      generateDeviceProfile: vi.fn(),
+      getStorageDirectoryPath: vi.fn(() => ''),
+      isIdentityProfileApplyEnabled: vi.fn(() => false),
+      loadGlobalOriginalProfile: vi.fn(),
+      readCurrentDeviceProfile: vi.fn(),
+      saveGlobalOriginalProfile: vi.fn(),
+    }));
+    vi.doMock('../../shared/platform/paths', () => ({
+      getAntigravityDbPaths: () => [],
+      refreshAntigravityProcessCache: () => Promise.resolve(),
+    }));
+    vi.doMock('@/modules/antigravity-runtime/switch/switchGuard', () => ({
+      runWithSwitchGuard: async (_owner: string, fn: () => Promise<void>) => fn(),
+    }));
+    vi.doMock('@/modules/antigravity-runtime/switch/switchFlow', () => ({
+      executeSwitchFlow: vi.fn(),
+    }));
+    vi.doMock('electron', () => ({ shell: { openExternal: vi.fn() } }));
+
+    const { listCloudAccounts } = await import('@/modules/cloud-account/ipc/handler');
+    const listedAccounts = await listCloudAccounts();
+
+    expect(listedAccounts.find((account) => account.id === 'acc-1')?.is_active_classic).toBe(false);
+    expect(listedAccounts.find((account) => account.id === 'acc-2')?.is_active_classic).toBe(true);
+  });
+
   it('backfills missing oauth_client_key with active non-enterprise client', async () => {
     const updateTokenMock = vi.fn(async () => undefined);
     const setSettingMock = vi.fn();
@@ -746,6 +844,8 @@ describe('cloud oauth client key backfill', () => {
       CloudAccountRepo: {
         getAccounts: vi.fn(async () => accounts),
         updateToken: updateTokenMock,
+        shouldInjectTokenIntoCredentialStore: vi.fn(() => false),
+        getActiveAccountIdForTarget: vi.fn(() => ''),
         getSetting: vi.fn((key: string, defaultValue: unknown) => {
           if (key === 'oauth_client_key_backfill_v1_done') {
             return false;
@@ -836,6 +936,8 @@ describe('cloud oauth client key backfill', () => {
       CloudAccountRepo: {
         getAccounts: vi.fn(async () => accounts),
         updateToken: updateTokenMock,
+        shouldInjectTokenIntoCredentialStore: vi.fn(() => false),
+        getActiveAccountIdForTarget: vi.fn(() => ''),
         getSetting: vi.fn((key: string, defaultValue: unknown) => {
           if (key === 'oauth_client_key_backfill_v1_done') {
             return false;

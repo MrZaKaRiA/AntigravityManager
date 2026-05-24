@@ -24,13 +24,9 @@ import {
 import { getAntigravityDbPaths, refreshAntigravityProcessCache } from '@/shared/platform/paths';
 import { runWithSwitchGuard } from '@/modules/antigravity-runtime/switch/switchGuard';
 import { executeSwitchFlow } from '@/modules/antigravity-runtime/switch/switchFlow';
-import type {
-  AntigravityAppTarget,
-} from '@/modules/account/types';
-import type {
-  DeviceProfile,
-  DeviceProfilesSnapshot,
-} from '@/modules/identity-profile/types';
+import { getCurrentAccountInfo } from '@/shared/persistence/database/handler';
+import type { AntigravityAppTarget } from '@/modules/account/types';
+import type { DeviceProfile, DeviceProfilesSnapshot } from '@/modules/identity-profile/types';
 import {
   classifyAccountStatusFromError,
   extractErrorMessage,
@@ -51,6 +47,10 @@ function notifyTrayUpdate(account: CloudAccount) {
 const ACTIVE_OAUTH_CLIENT_KEY_SETTING = 'active_oauth_client_key';
 const OAUTH_CLIENT_KEY_BACKFILL_DONE_SETTING = 'oauth_client_key_backfill_v1_done';
 const ENTERPRISE_OAUTH_CLIENT_KEY = 'antigravity_enterprise';
+
+function normalizeAccountEmail(email: string | undefined): string {
+  return (email ?? '').trim().toLowerCase();
+}
 
 function mergeRefreshedToken(
   currentToken: CloudAccount['token'],
@@ -352,12 +352,55 @@ export async function addGoogleAccount(
 }
 
 export async function listCloudAccounts(): Promise<CloudAccount[]> {
-  const accounts = await CloudAccountRepo.getAccounts();
+  let accounts = await CloudAccountRepo.getAccounts();
   const backfilled = await backfillMissingOAuthClientKeyForLegacyAccounts(accounts);
   if (backfilled) {
-    return CloudAccountRepo.getAccounts();
+    accounts = await CloudAccountRepo.getAccounts();
   }
-  return accounts;
+
+  await Promise.all([
+    refreshAntigravityProcessCache('classic'),
+    refreshAntigravityProcessCache('ide'),
+  ]);
+
+  let classicEmail = '';
+  let ideEmail = '';
+  try {
+    const classicInfo = getCurrentAccountInfo('classic');
+    if (classicInfo.isAuthenticated) {
+      classicEmail = normalizeAccountEmail(classicInfo.email);
+    }
+  } catch (err) {
+    logger.warn('Failed to read current classic account info during listing', err);
+  }
+  let activeClassicAccountId = '';
+  if (!classicEmail && CloudAccountRepo.shouldInjectTokenIntoCredentialStore('classic')) {
+    activeClassicAccountId = CloudAccountRepo.getActiveAccountIdForTarget('classic');
+  }
+  try {
+    const ideInfo = getCurrentAccountInfo('ide');
+    if (ideInfo.isAuthenticated) {
+      ideEmail = normalizeAccountEmail(ideInfo.email);
+    }
+  } catch (err) {
+    logger.warn('Failed to read current ide account info during listing', err);
+  }
+  const activeIdeAccountId = ideEmail ? '' : CloudAccountRepo.getActiveAccountIdForTarget('ide');
+
+  return accounts.map((account) => {
+    const accountEmail = normalizeAccountEmail(account.email);
+    const isClassicActive =
+      classicEmail === accountEmail ||
+      (!!activeClassicAccountId && activeClassicAccountId === account.id);
+    const isIdeActive =
+      ideEmail === accountEmail || (!!activeIdeAccountId && activeIdeAccountId === account.id);
+    return {
+      ...account,
+      is_active: isClassicActive || isIdeActive,
+      is_active_classic: isClassicActive,
+      is_active_ide: isIdeActive,
+    };
+  });
 }
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
@@ -597,6 +640,7 @@ export async function switchCloudAccount(
           // 5. Update usage and active status
           CloudAccountRepo.updateLastUsed(account.id);
           CloudAccountRepo.setActive(account.id);
+          CloudAccountRepo.setActiveForTarget(appTarget, account.id);
           await clearAccountStatus(account);
 
           logger.info(`Successfully switched to cloud account: ${account.email}`);

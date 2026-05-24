@@ -1093,6 +1093,11 @@ export function CloudAccountList() {
               isSwitching={
                 switchMutation.isPending && switchMutation.variables?.accountId === account.id
               }
+              switchingTarget={
+                switchMutation.isPending && switchMutation.variables?.accountId === account.id
+                  ? switchMutation.variables?.appTarget
+                  : undefined
+              }
             />
           ) : (
             <CloudAccountCard
@@ -1112,6 +1117,11 @@ export function CloudAccountList() {
               }
               isSwitching={
                 switchMutation.isPending && switchMutation.variables?.accountId === account.id
+              }
+              switchingTarget={
+                switchMutation.isPending && switchMutation.variables?.accountId === account.id
+                  ? switchMutation.variables?.appTarget
+                  : undefined
               }
             />
           ),

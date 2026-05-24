@@ -19,6 +19,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/shared/ui/utils';
 
 import {
   MoreVertical,
@@ -107,11 +108,6 @@ function formatCreditsExpiry(expiryDate: string): string {
   }
 }
 
-function isGeminiProFamilyModel(modelName: string): boolean {
-  const normalizedModelName = modelName.toLowerCase();
-  return normalizedModelName.includes('gemini-3.1-pro');
-}
-
 function mergeGeminiProQuotaEntries(
   entries: ModelQuotaEntry[],
 ): Record<string, CloudQuotaModelInfo> {
@@ -175,6 +171,7 @@ interface CloudAccountCardProps {
   isRefreshing?: boolean;
   isDeleting?: boolean;
   isSwitching?: boolean;
+  switchingTarget?: AntigravityAppTarget;
 }
 
 export function CloudAccountCard({
@@ -188,6 +185,7 @@ export function CloudAccountCard({
   isRefreshing,
   isDeleting,
   isSwitching,
+  switchingTarget,
 }: CloudAccountCardProps) {
   const { t } = useTranslation();
   const { config, saveConfig } = useAppConfig();
@@ -200,6 +198,8 @@ export function CloudAccountCard({
   const setAccountProxy = useSetAccountProxy();
   const [proxyUrl, setProxyUrl] = useState(account.proxy_url || '');
   const [proxySaved, setProxySaved] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isActiveAnywhere = !!(account.is_active_classic || account.is_active_ide);
 
   const getQuotaTextColorClass = (percentage: number) => {
     const quotaStatus = getQuotaStatus(percentage);
@@ -245,9 +245,6 @@ export function CloudAccountCard({
     .filter(([name]) => name.includes('claude'))
     .sort((a, b) => b[1].percentage - a[1].percentage);
 
-  const hasHighTier = geminiModels.some(
-    ([name, info]) => isGeminiProFamilyModel(name) && info.percentage > 50,
-  );
   const hasVisibleQuotaModels = geminiModels.length > 0 || claudeModels.length > 0;
 
   const renderQuotaModelGroup = (title: string, models: ModelQuotaEntry[]) => {
@@ -393,6 +390,29 @@ export function CloudAccountCard({
           </CardTitle>
           <CardDescription className="truncate text-xs">{account.email}</CardDescription>
 
+          {(account.is_active_classic || account.is_active_ide) && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {account.is_active_classic && (
+                <span className="dark:text-green-450 flex items-center gap-1 rounded border border-green-500/20 bg-green-500/10 px-1.5 py-0.5 text-[9px] font-bold text-green-600">
+                  <span className="relative flex h-1 w-1">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex h-1 w-1 rounded-full bg-green-500"></span>
+                  </span>
+                  {t('cloud.card.appLabel', 'Antigravity App')}
+                </span>
+              )}
+              {account.is_active_ide && (
+                <span className="dark:text-indigo-455 flex items-center gap-1 rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600">
+                  <span className="relative flex h-1 w-1">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex h-1 w-1 rounded-full bg-indigo-500"></span>
+                  </span>
+                  {t('cloud.card.ideLabel', 'Antigravity IDE')}
+                </span>
+              )}
+            </div>
+          )}
+
           {shouldShowAiCredits && aiCredits && (
             <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-blue-500">
               <span>
@@ -470,15 +490,6 @@ export function CloudAccountCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>{t('cloud.card.actions')}</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onSwitch(account.id)} disabled={isSwitching}>
-              <Power className="mr-2 h-4 w-4" />
-              {t('account.switchToAntigravity', 'Switch to Antigravity')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onSwitch(account.id, 'ide')} disabled={isSwitching}>
-              <Repeat2 className="mr-2 h-4 w-4" />
-              {t('account.switchToIde', 'Switch to Antigravity IDE')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onRefresh(account.id)} disabled={isRefreshing}>
               <RefreshCw className="mr-2 h-4 w-4" />
               {t('cloud.card.refresh')}
@@ -514,11 +525,7 @@ export function CloudAccountCard({
             >
               {account.provider.toUpperCase()}
             </Badge>
-            {account.is_active && (
-              <Badge variant="default" className="bg-green-500 text-xs hover:bg-green-600">
-                {t('cloud.card.active')}
-              </Badge>
-            )}
+
             {validationBlockedStatusLabel && (
               <span className="text-destructive text-xs font-medium">
                 {validationBlockedStatusLabel}
@@ -526,36 +533,77 @@ export function CloudAccountCard({
             )}
           </div>
 
-          {hasHighTier && (
-            <Badge
-              variant="secondary"
-              className="animate-pulse border-blue-500/20 bg-blue-500/10 text-[10px] text-blue-500"
-            >
-              {t('cloud.card.gemini3Ready')}
-            </Badge>
-          )}
-
-          {account.is_active ? (
-            <Button variant="ghost" size="sm" disabled className="text-green-600 opacity-100">
-              <Power className="mr-1 h-3 w-3" />
-              {t('cloud.card.active')}
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onSwitch(account.id)}
-              disabled={isSwitching}
-              className="cursor-pointer"
-            >
-              {isSwitching ? (
-                <RefreshCw className="h-3 w-3 animate-spin" />
-              ) : (
-                <Power className="mr-1 h-3 w-3" />
-              )}
-              {t('cloud.card.use')}
-            </Button>
-          )}
+          <div
+            onMouseEnter={() => setMenuOpen(true)}
+            onMouseLeave={() => setMenuOpen(false)}
+            className="relative"
+          >
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={isActiveAnywhere ? 'ghost' : 'secondary'}
+                  size="sm"
+                  className={cn(
+                    'h-8 cursor-pointer px-3 text-xs font-semibold transition-all duration-200',
+                    isActiveAnywhere
+                      ? 'bg-green-500/10 text-green-600 hover:bg-green-500/15 dark:text-green-500'
+                      : '',
+                  )}
+                >
+                  {isSwitching ? (
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : isActiveAnywhere ? (
+                    <span className="relative mr-2 flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
+                    </span>
+                  ) : (
+                    <Power className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {isActiveAnywhere ? t('cloud.card.active') : t('cloud.card.use')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-56"
+                onMouseEnter={() => setMenuOpen(true)}
+              >
+                <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[10px] tracking-wider uppercase">
+                  {t('cloud.card.switchTarget', 'Switch Environment')}
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => onSwitch(account.id)}
+                  disabled={isSwitching || account.is_active_classic}
+                  className="flex cursor-pointer items-center justify-between py-2 text-xs"
+                >
+                  <span className="flex items-center gap-2">
+                    <Power className="text-primary h-3.5 w-3.5" />
+                    <span>{t('account.switchToAntigravity', 'Switch to Antigravity')}</span>
+                  </span>
+                  {account.is_active_classic && (
+                    <Badge className="h-4 border-none bg-green-500/20 px-1 text-[9px] font-semibold text-green-600 hover:bg-green-500/20">
+                      Active
+                    </Badge>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => onSwitch(account.id, 'ide')}
+                  disabled={isSwitching || account.is_active_ide}
+                  className="flex cursor-pointer items-center justify-between py-2 text-xs"
+                >
+                  <span className="flex items-center gap-2">
+                    <Repeat2 className="text-primary h-3.5 w-3.5" />
+                    <span>{t('account.switchToIde', 'Switch to Antigravity IDE')}</span>
+                  </span>
+                  {account.is_active_ide && (
+                    <Badge className="h-4 border-none bg-indigo-500/20 px-1 text-[9px] font-semibold text-indigo-600 hover:bg-indigo-500/20">
+                      Active
+                    </Badge>
+                  )}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -626,6 +674,7 @@ interface CompactCloudAccountCardProps {
   isRefreshing?: boolean;
   isDeleting?: boolean;
   isSwitching?: boolean;
+  switchingTarget?: AntigravityAppTarget;
 }
 
 export function CompactCloudAccountCard({
@@ -637,9 +686,12 @@ export function CompactCloudAccountCard({
   isRefreshing,
   isDeleting,
   isSwitching,
+  switchingTarget,
 }: CompactCloudAccountCardProps) {
   const { t } = useTranslation();
-  const { config, saveConfig } = useAppConfig();
+  const { config } = useAppConfig();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isActiveAnywhere = !!(account.is_active_classic || account.is_active_ide);
 
   const getQuotaBarColorClass = (percentage: number) => {
     const quotaStatus = getQuotaStatus(percentage);
@@ -649,8 +701,6 @@ export function CompactCloudAccountCard({
   const visibleModelEntries = Object.entries(account.quota?.models || {}).filter(
     ([modelName]) => config?.model_visibility?.[modelName] !== false,
   ) as ModelQuotaEntry[];
-
-  const allModelEntries = Object.entries(account.quota?.models || {}) as ModelQuotaEntry[];
 
   const mergedModelQuotas = mergeGeminiProQuotaEntries(visibleModelEntries);
 
@@ -697,18 +747,20 @@ export function CompactCloudAccountCard({
           >
             {account.provider.toUpperCase()}
           </Badge>
-          {account.is_active && (
-            <Badge
-              variant="default"
-              className="shrink-0 bg-green-500 text-[10px] hover:bg-green-600"
-            >
-              {t('cloud.card.active')}
-            </Badge>
-          )}
         </div>
 
-        <div className="text-muted-foreground flex items-center gap-3 text-xs">
+        <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
           <span className="truncate">{account.email}</span>
+          {account.is_active_classic && (
+            <span className="rounded border border-green-500/20 bg-green-500/10 px-1 text-[9px] font-bold text-green-600 dark:text-green-400">
+              App
+            </span>
+          )}
+          {account.is_active_ide && (
+            <span className="rounded border border-indigo-500/20 bg-indigo-500/10 px-1 text-[9px] font-bold text-indigo-600 dark:text-indigo-400">
+              IDE
+            </span>
+          )}
           {validationBlockedStatusLabel && (
             <span className="text-destructive shrink-0 font-medium">
               {validationBlockedStatusLabel}
@@ -759,80 +811,77 @@ export function CompactCloudAccountCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {allModelEntries.length > 0 && (
-          <DropdownMenu>
+        <div
+          onMouseEnter={() => setMenuOpen(true)}
+          onMouseLeave={() => setMenuOpen(false)}
+          className="relative"
+        >
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer rounded-full">
-                {(() => {
-                  const hiddenCount = allModelEntries.filter(
-                    ([modelName]) => config?.model_visibility?.[modelName] === false,
-                  ).length;
-                  return hiddenCount > 0 ? (
-                    <EyeOff className="text-muted-foreground h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  );
-                })()}
+              <Button
+                variant={isActiveAnywhere ? 'ghost' : 'secondary'}
+                size="sm"
+                className={cn(
+                  'h-7 cursor-pointer px-2.5 text-[11px] font-semibold transition-all duration-200',
+                  isActiveAnywhere
+                    ? 'bg-green-500/10 text-green-600 hover:bg-green-500/15 dark:text-green-500'
+                    : '',
+                )}
+              >
+                {isSwitching ? (
+                  <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                ) : isActiveAnywhere ? (
+                  <span className="relative mr-1.5 flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                  </span>
+                ) : (
+                  <Power className="mr-1 h-3 w-3" />
+                )}
+                {isActiveAnywhere ? t('cloud.card.active') : t('cloud.card.use')}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-64" align="end">
-              <DropdownMenuLabel>{t('cloud.card.modelVisibility')}</DropdownMenuLabel>
-              <div className="max-h-64 overflow-auto px-2 py-1">
-                {allModelEntries.map(([modelName]) => {
-                  const isVisible = config?.model_visibility?.[modelName] !== false;
-                  return (
-                    <DropdownMenuItem
-                      key={modelName}
-                      onSelect={(e) => e.preventDefault()}
-                      className="flex cursor-pointer items-center gap-2"
-                    >
-                      <Checkbox
-                        checked={isVisible}
-                        onCheckedChange={(checked) => {
-                          if (config) {
-                            const newVisibility = { ...config.model_visibility };
-                            newVisibility[modelName] = checked as boolean;
-                            saveConfig({ ...config, model_visibility: newVisibility });
-                          }
-                        }}
-                      />
-                      <span className="truncate text-xs" title={modelName}>
-                        {formatModelDisplayName(modelName)}
-                      </span>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </div>
+            <DropdownMenuContent
+              align="end"
+              className="w-56"
+              onMouseEnter={() => setMenuOpen(true)}
+            >
+              <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[10px] tracking-wider uppercase">
+                {t('cloud.card.switchTarget', 'Switch Environment')}
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => onSwitch(account.id)}
+                disabled={isSwitching || account.is_active_classic}
+                className="flex cursor-pointer items-center justify-between py-2 text-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <Power className="text-primary h-3.5 w-3.5" />
+                  <span>{t('account.switchToAntigravity', 'Switch to Antigravity')}</span>
+                </span>
+                {account.is_active_classic && (
+                  <Badge className="h-4 border-none bg-green-500/20 px-1 text-[9px] font-semibold text-green-600 hover:bg-green-500/20">
+                    Active
+                  </Badge>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onSwitch(account.id, 'ide')}
+                disabled={isSwitching || account.is_active_ide}
+                className="flex cursor-pointer items-center justify-between py-2 text-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <Repeat2 className="text-primary h-3.5 w-3.5" />
+                  <span>{t('account.switchToIde', 'Switch to Antigravity IDE')}</span>
+                </span>
+                {account.is_active_ide && (
+                  <Badge className="h-4 border-none bg-indigo-500/20 px-1 text-[9px] font-semibold text-indigo-600 hover:bg-indigo-500/20">
+                    Active
+                  </Badge>
+                )}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
-
-        {account.is_active ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            className="h-7 text-xs text-green-600 opacity-100"
-          >
-            <Power className="mr-1 h-3 w-3" />
-            {t('cloud.card.active')}
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => onSwitch(account.id)}
-            disabled={isSwitching}
-            className="h-7 cursor-pointer text-xs"
-          >
-            {isSwitching ? (
-              <RefreshCw className="h-3 w-3 animate-spin" />
-            ) : (
-              <Power className="mr-1 h-3 w-3" />
-            )}
-            {t('cloud.card.use')}
-          </Button>
-        )}
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -843,15 +892,6 @@ export function CompactCloudAccountCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>{t('cloud.card.actions')}</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onSwitch(account.id)} disabled={isSwitching}>
-              <Power className="mr-2 h-4 w-4" />
-              {t('account.switchToAntigravity', 'Switch to Antigravity')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onSwitch(account.id, 'ide')} disabled={isSwitching}>
-              <Repeat2 className="mr-2 h-4 w-4" />
-              {t('account.switchToIde', 'Switch to Antigravity IDE')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onRefresh(account.id)} disabled={isRefreshing}>
               <RefreshCw className="mr-2 h-4 w-4" />
               {t('cloud.card.refresh')}

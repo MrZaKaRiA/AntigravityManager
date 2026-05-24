@@ -13,10 +13,7 @@ import {
   CloudQuotaDataSchema,
   CloudTokenDataSchema,
 } from '@/modules/cloud-account/types';
-import {
-  type AntigravityAppTarget,
-  resolveAntigravityAppTarget,
-} from '@/modules/account/types';
+import { type AntigravityAppTarget, resolveAntigravityAppTarget } from '@/modules/account/types';
 import type { DeviceProfile, DeviceProfileVersion } from '@/modules/identity-profile/types';
 import { ItemTableValueRowSchema, TableInfoRowSchema } from '@/shared/persistence/database/types';
 import { decryptWithMigration, encrypt, type KeySource } from '@/shared/security/security';
@@ -41,6 +38,7 @@ const SQLITE_BUSY_TIMEOUT_MS = 3000;
 const SQLITE_RETRY_DELAY_MS = 150;
 const SQLITE_MAX_RETRIES = 3;
 const DEVICE_PAYLOAD_SCHEMA_VERSION = 1;
+const ACTIVE_ACCOUNT_SETTING_PREFIX = 'active_cloud_account';
 
 type DrizzleExecutor = Pick<
   BetterSQLite3Database<typeof drizzleSchema>,
@@ -990,6 +988,16 @@ export class CloudAccountRepo {
     } finally {
       raw.close();
     }
+  }
+
+  static setActiveForTarget(target: AntigravityAppTarget | undefined, id: string): void {
+    const normalizedTarget = resolveAntigravityAppTarget(target);
+    this.setSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`, id);
+  }
+
+  static getActiveAccountIdForTarget(target: AntigravityAppTarget | undefined): string {
+    const normalizedTarget = resolveAntigravityAppTarget(target);
+    return this.getSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`, '');
   }
 
   static setAccountProxy(id: string, proxyUrl: string | null): void {
