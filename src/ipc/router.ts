@@ -14,8 +14,13 @@ import {
   closeAntigravity,
   startAntigravity,
 } from '@/modules/antigravity-runtime/ipc/handler';
+import { AntigravityAppTargetSchema } from '@/modules/account/types';
 import { systemHandler } from '@/modules/app-shell/ipc/system/handler';
 import { logger } from '../shared/logging/logger';
+
+const ProcessTargetInputSchema = z
+  .object({ target: AntigravityAppTargetSchema.optional() })
+  .optional();
 
 // Log middleware setup
 const logMiddleware = os.middleware(async (opts: any) => {
@@ -42,15 +47,24 @@ export const router = os.use(logMiddleware).router({
 
   // Inline process router to ensure structure
   proc: os.router({
-    isProcessRunning: os.output(z.boolean()).handler(async () => {
-      return await isProcessRunning();
-    }),
-    closeAntigravity: os.output(z.void()).handler(async () => {
-      await closeAntigravity();
-    }),
-    startAntigravity: os.output(z.void()).handler(async () => {
-      await startAntigravity();
-    }),
+    isProcessRunning: os
+      .input(ProcessTargetInputSchema)
+      .output(z.boolean())
+      .handler(async ({ input }) => {
+        return await isProcessRunning(input?.target);
+      }),
+    closeAntigravity: os
+      .input(ProcessTargetInputSchema)
+      .output(z.void())
+      .handler(async ({ input }) => {
+        await closeAntigravity(input?.target);
+      }),
+    startAntigravity: os
+      .input(ProcessTargetInputSchema)
+      .output(z.void())
+      .handler(async ({ input }) => {
+        await startAntigravity(input?.target);
+      }),
   }),
 
   account: accountRouter,

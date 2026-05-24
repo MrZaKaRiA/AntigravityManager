@@ -90,8 +90,11 @@ function ensureDatabaseExists(dbPath: string): void {
  * @param dbPath {string} The path to the database file.
  * @returns {ReturnType<typeof openDrizzleConnection>} The database connection.
  */
-export function getDatabaseConnection(dbPath?: string): ReturnType<typeof openDrizzleConnection> {
-  const targetPath = dbPath || getAntigravityDbPaths()[0];
+export function getDatabaseConnection(
+  dbPath?: string,
+  target?: AntigravityAppTarget | null,
+): ReturnType<typeof openDrizzleConnection> {
+  const targetPath = dbPath || getAntigravityDbPaths(target)[0];
 
   if (!targetPath) {
     throw new Error('No Antigravity database path found');
@@ -124,22 +127,21 @@ function readItemValue(
   return row?.value ?? null;
 }
 
-/**
- * Gets the current account info.
- * @returns {AccountInfo} The current account info.
- */
-export function getCurrentAccountInfo(): AccountInfo {
-  // NOTE Database existence is now handled by getDatabaseConnection
+function readCurrentAccountInfoFromDbPath(
+  dbPath: string,
+  target?: AntigravityAppTarget | null,
+): AccountInfo {
   let connection: ReturnType<typeof openDrizzleConnection> | null = null;
   try {
-    connection = getDatabaseConnection(undefined);
+    connection = getDatabaseConnection(dbPath);
     const { orm } = connection;
+    const contextPrefix = `${target ?? 'default'}.itemTable`;
 
     // Query for auth status
     const authValue = readItemValue(
       orm,
       'antigravityAuthStatus',
-      'ide.itemTable.antigravityAuthStatus',
+      `${contextPrefix}.antigravityAuthStatus`,
     );
     let authStatus = null;
     if (authValue) {
@@ -154,7 +156,7 @@ export function getCurrentAccountInfo(): AccountInfo {
     const initValue = readItemValue(
       orm,
       'jetskiStateSync.agentManagerInitState',
-      'ide.itemTable.jetskiStateSync.agentManagerInitState',
+      `${contextPrefix}.jetskiStateSync.agentManagerInitState`,
     );
     let initState = null;
     if (initValue) {
@@ -169,7 +171,7 @@ export function getCurrentAccountInfo(): AccountInfo {
     const googleValue = readItemValue(
       orm,
       'google.antigravity',
-      'ide.itemTable.google.antigravity',
+      `${contextPrefix}.google.antigravity`,
     );
     let googleState = null;
     if (googleValue) {
@@ -184,7 +186,7 @@ export function getCurrentAccountInfo(): AccountInfo {
     const settingsValue = readItemValue(
       orm,
       'antigravityUserSettings.allUserSettings',
-      'ide.itemTable.antigravityUserSettings.allUserSettings',
+      `${contextPrefix}.antigravityUserSettings.allUserSettings`,
     );
     let settingsState = null;
     if (settingsValue) {
@@ -197,9 +199,15 @@ export function getCurrentAccountInfo(): AccountInfo {
 
     // Helper to find email in object
     const findEmail = (obj: { email?: string; user?: { email?: string } }): string => {
-      if (!obj) return '';
-      if (isString(obj.email)) return obj.email;
-      if (obj.user && isString(obj.user.email)) return obj.user.email;
+      if (!obj) {
+        return '';
+      }
+      if (isString(obj.email)) {
+        return obj.email;
+      }
+      if (obj.user && isString(obj.user.email)) {
+        return obj.user.email;
+      }
       return '';
     };
 
@@ -220,14 +228,46 @@ export function getCurrentAccountInfo(): AccountInfo {
       name,
       isAuthenticated,
     };
-  } catch (error) {
-    logger.error('Failed to get current account info', error);
-    throw error;
   } finally {
     if (connection) {
       connection.raw.close();
     }
   }
+}
+
+/**
+ * Gets the current account info.
+ * @returns {AccountInfo} The current account info.
+ */
+export function getCurrentAccountInfo(target?: AntigravityAppTarget | null): AccountInfo {
+  const dbPaths = getAntigravityDbPaths(target);
+  if (dbPaths.length === 0) {
+    return { email: '', isAuthenticated: false };
+  }
+
+  let lastError: unknown;
+  for (const dbPath of dbPaths) {
+    if (!fs.existsSync(dbPath)) {
+      continue;
+    }
+
+    try {
+      const accountInfo = readCurrentAccountInfoFromDbPath(dbPath, target);
+      if (accountInfo.isAuthenticated) {
+        return accountInfo;
+      }
+    } catch (error) {
+      lastError = error;
+      logger.warn(`Failed to read current account info from ${dbPath}`, error);
+    }
+  }
+
+  if (lastError) {
+    logger.error('Failed to get current account info', lastError);
+    throw lastError;
+  }
+
+  return { email: '', isAuthenticated: false };
 }
 
 export function backupAccount(account: AccountBackupData['account']): AccountBackupData {

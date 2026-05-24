@@ -126,6 +126,11 @@ function areExecutablePathsEquivalent(
   return leftNormalized === rightNormalized;
 }
 
+function hasAntigravityIdeMarker(value: string): boolean {
+  const normalizedValue = value.toLowerCase();
+  return normalizedValue.includes('antigravity ide') || normalizedValue.includes('antigravity-ide');
+}
+
 const ANTIGRAVITY_HELPER_PROCESS_NAME_PATTERNS = [
   'helper',
   'plugin',
@@ -168,6 +173,10 @@ export function isTargetAntigravityProcessCandidate(
   const configuredIdePath = getConfiguredAntigravityExecutablePath('ide', false);
   const strictConfiguredClassicPath = getConfiguredAntigravityExecutablePath('classic', true);
   const strictConfiguredIdePath = getConfiguredAntigravityExecutablePath('ide', true);
+  const commandExecutablePath = parseCommandLineArguments(processItem.commandLine)[0] || '';
+  const executableIdentity = `${processItem.executablePath || ''} ${commandExecutablePath}`;
+  const hasAntigravityProcessIdentity =
+    nameLower.includes('antigravity') || executableIdentity.toLowerCase().includes('antigravity');
   const matchesClassicPath =
     Boolean((configuredClassicPath && processItem.executablePath) || '') &&
     areExecutablePathsEquivalent(configuredClassicPath as string, processItem.executablePath || '');
@@ -175,10 +184,9 @@ export function isTargetAntigravityProcessCandidate(
     Boolean((configuredIdePath && processItem.executablePath) || '') &&
     areExecutablePathsEquivalent(configuredIdePath as string, processItem.executablePath || '');
   const isIde =
-    nameLower.includes('antigravity ide') ||
-    nameLower.includes('antigravity-ide') ||
-    cmdLower.includes('antigravity ide') ||
-    cmdLower.includes('antigravity-ide') ||
+    hasAntigravityIdeMarker(nameLower) ||
+    hasAntigravityIdeMarker(executableIdentity) ||
+    (hasAntigravityProcessIdentity && hasAntigravityIdeMarker(cmdLower)) ||
     matchesIdePath;
 
   if (isAntigravityHelperProcess(nameLower, cmdLower)) {
@@ -236,6 +244,35 @@ export function isConfiguredTargetExecutableProcessCandidate(
   }
 
   return matchesClassicPath && !matchesIdePath;
+}
+
+export function isTargetAntigravityExecutableProcessCandidate(
+  processItem: AntigravityProcessCandidate,
+  target?: AntigravityAppTarget | null,
+): boolean {
+  const normalizedTarget = resolveAntigravityAppTarget(target);
+  const oppositeTarget: AntigravityAppTarget = normalizedTarget === 'ide' ? 'classic' : 'ide';
+  const executablePath =
+    processItem.executablePath ||
+    resolveExecutablePathFromProcessInfo(null, processItem.commandLine);
+
+  if (!executablePath) {
+    return false;
+  }
+
+  const targetExecutablePath = getAntigravityExecutablePath(normalizedTarget);
+  if (!targetExecutablePath) {
+    return false;
+  }
+
+  if (!areExecutablePathsEquivalent(targetExecutablePath, executablePath)) {
+    return false;
+  }
+
+  const oppositeExecutablePath = getAntigravityExecutablePath(oppositeTarget);
+  return !(
+    oppositeExecutablePath && areExecutablePathsEquivalent(oppositeExecutablePath, executablePath)
+  );
 }
 
 function parseCommandLineArguments(commandLine: string): string[] {
@@ -315,22 +352,31 @@ function readAntigravityManagerConfig(): {
   antigravity_executable?: unknown;
   antigravity_ide_executable?: unknown;
   antigravity_args?: unknown;
+  antigravity_ide_args?: unknown;
 } | null {
-  const configPath = path.join(getAppDataDir(), CONFIG_FILENAME);
+  const configPaths = [
+    path.join(getAgentDir(), CONFIG_FILENAME),
+    path.join(getAppDataDir(), CONFIG_FILENAME),
+  ];
 
-  try {
-    if (!fs.existsSync(configPath)) {
-      return null;
+  for (const configPath of configPaths) {
+    try {
+      if (!fs.existsSync(configPath)) {
+        continue;
+      }
+
+      return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+        antigravity_executable?: unknown;
+        antigravity_ide_executable?: unknown;
+        antigravity_args?: unknown;
+        antigravity_ide_args?: unknown;
+      };
+    } catch {
+      continue;
     }
-
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
-      antigravity_executable?: unknown;
-      antigravity_ide_executable?: unknown;
-      antigravity_args?: unknown;
-    };
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 interface RunningAntigravityProcess {
@@ -444,7 +490,9 @@ function getRunningAntigravityProcesses(
 }
 
 function getUserDataDirFromRunningProcess(target?: AntigravityAppTarget | null): string | null {
-  const configuredUserDataDir = extractUserDataDirectoryFromArgs(getConfiguredAntigravityArgs());
+  const configuredUserDataDir = extractUserDataDirectoryFromArgs(
+    getConfiguredAntigravityArgs(target),
+  );
   if (configuredUserDataDir && fs.existsSync(configuredUserDataDir)) {
     return configuredUserDataDir;
   }
@@ -483,13 +531,17 @@ export function getAntigravityLaunchArgsFromRunningProcess(
   return getAntigravityArgsFromRunningProcess(target)[0]?.slice(1) || [];
 }
 
-export function getConfiguredAntigravityArgs(): string[] {
+export function getConfiguredAntigravityArgs(target?: AntigravityAppTarget | null): string[] {
   const rawConfig = readAntigravityManagerConfig();
-  if (!Array.isArray(rawConfig?.antigravity_args)) {
+  const configKey =
+    resolveAntigravityAppTarget(target) === 'ide' ? 'antigravity_ide_args' : 'antigravity_args';
+  const configuredArgs = rawConfig?.[configKey];
+
+  if (!Array.isArray(configuredArgs)) {
     return [];
   }
 
-  return rawConfig.antigravity_args.filter((arg): arg is string => typeof arg === 'string');
+  return configuredArgs.filter((arg): arg is string => typeof arg === 'string');
 }
 
 function getConfiguredAntigravityExecutablePath(

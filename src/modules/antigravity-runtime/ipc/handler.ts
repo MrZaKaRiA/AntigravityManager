@@ -1,4 +1,5 @@
 import { exec, execSync, spawn } from 'child_process';
+import path from 'path';
 import { promisify } from 'util';
 import findProcess, { ProcessInfo } from 'find-process';
 import { isNumber } from 'lodash-es';
@@ -7,6 +8,7 @@ import {
   getAntigravityExecutablePath,
   getConfiguredAntigravityArgs,
   isConfiguredTargetExecutableProcessCandidate,
+  isTargetAntigravityExecutableProcessCandidate,
   isTargetAntigravityProcessCandidate,
   isWsl,
 } from '@/shared/platform/paths';
@@ -30,7 +32,10 @@ function isPgrepNoMatchError(error: unknown): boolean {
   return hasPgrep && code === 1;
 }
 
-function getProcessSearchNames(target?: AntigravityAppTarget | null): string[] {
+function getProcessSearchNames(
+  target?: AntigravityAppTarget | null,
+  includeAllProcesses = false,
+): string[] {
   const normalizedTarget = resolveAntigravityAppTarget(target);
   const searchNames =
     normalizedTarget === 'ide'
@@ -40,17 +45,21 @@ function getProcessSearchNames(target?: AntigravityAppTarget | null): string[] {
   if (process.platform === 'linux') {
     searchNames.push('electron');
   }
+  if (includeAllProcesses) {
+    searchNames.push('');
+  }
 
   return searchNames;
 }
 
 async function findAntigravityProcesses(
   target?: AntigravityAppTarget | null,
+  includeAllProcesses = false,
 ): Promise<ProcessInfo[]> {
   const allMatches: ProcessInfo[] = [];
   let sawNoMatch = false;
 
-  for (const searchName of getProcessSearchNames(target)) {
+  for (const searchName of getProcessSearchNames(target, includeAllProcesses)) {
     try {
       const matches = await findProcess('name', searchName, false);
       allMatches.push(...matches);
@@ -124,6 +133,39 @@ function mapProcessInfoToCandidate(processInfo: ProcessInfo): AntigravityProcess
     commandLine,
     executablePath: processInfo.bin || parseCommandLineArguments(commandLine)[0] || '',
   };
+}
+
+function isClosableTargetProcessCandidate(
+  candidate: AntigravityProcessCandidate,
+  target?: AntigravityAppTarget | null,
+): boolean {
+  return (
+    isTargetAntigravityExecutableProcessCandidate(candidate, target) ||
+    isConfiguredTargetExecutableProcessCandidate(candidate, target) ||
+    isTargetAntigravityProcessCandidate(candidate, target)
+  );
+}
+
+async function hasClosableTargetProcess(target?: AntigravityAppTarget | null): Promise<boolean> {
+  const currentPid = process.pid;
+  const processes = await findAntigravityProcesses(target, true);
+
+  return processes.some((processInfo) => {
+    if (processInfo.pid === currentPid) {
+      return false;
+    }
+
+    const candidate = mapProcessInfoToCandidate(processInfo);
+    const commandLine = candidate.commandLine;
+    if (
+      commandLine.includes('Antigravity Manager') ||
+      commandLine.includes('antigravity-manager')
+    ) {
+      return false;
+    }
+
+    return isClosableTargetProcessCandidate(candidate, target);
+  });
 }
 
 /**
@@ -201,7 +243,7 @@ export async function closeAntigravity(target?: AntigravityAppTarget | null): Pr
 
     // Stage 2 & 3: Find and Kill remaining processes
     const currentPid = process.pid;
-    const targetProcesses = (await findAntigravityProcesses(target)).filter((processInfo) => {
+    const targetProcesses = (await findAntigravityProcesses(target, true)).filter((processInfo) => {
       const candidate = mapProcessInfoToCandidate(processInfo);
       const commandLine = candidate.commandLine;
 
@@ -215,10 +257,7 @@ export async function closeAntigravity(target?: AntigravityAppTarget | null): Pr
       ) {
         return false;
       }
-      return (
-        isConfiguredTargetExecutableProcessCandidate(candidate, target) ||
-        isTargetAntigravityProcessCandidate(candidate, target)
-      );
+      return isClosableTargetProcessCandidate(candidate, target);
     });
 
     if (targetProcesses.length === 0) {
@@ -252,7 +291,7 @@ export async function _waitForProcessExit(
 ): Promise<void> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
-    if (!(await isProcessRunning(target))) {
+    if (!(await hasClosableTargetProcess(target))) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -314,6 +353,10 @@ function shouldUseLinuxGpuSafeLaunchArgs(): boolean {
   return enableLinuxGpuRaw !== '1' && enableLinuxGpuRaw !== 'true';
 }
 
+function getAntigravityUriProtocol(target: AntigravityAppTarget): string {
+  return target === 'ide' ? 'antigravity-ide' : 'antigravity';
+}
+
 async function startAntigravityByExecutable(
   executablePath: string,
   target?: AntigravityAppTarget | null,
@@ -364,7 +407,7 @@ async function startAntigravityByExecutable(
     const child = spawn(executablePath, configuredArgs, {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true,
+      cwd: path.dirname(executablePath),
     });
     child.unref();
     return;
@@ -416,7 +459,7 @@ export async function startAntigravity(
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
   const appName = resolvedTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
-  const configuredArgs = getConfiguredAntigravityArgs();
+  const configuredArgs = getConfiguredAntigravityArgs(resolvedTarget);
   const shouldUseUri = resolvedTarget === 'classic' && useUri && configuredArgs.length === 0;
   logger.info(`Starting ${appName}...`);
 
@@ -427,29 +470,23 @@ export async function startAntigravity(
 
   if (shouldUseUri) {
     logger.info('Using URI protocol to start...');
-    const uri = `${target}://oauth-success`;
+    const uri = `${getAntigravityUriProtocol(resolvedTarget)}://oauth-success`;
 
     if (await openUri(uri)) {
       logger.info(`${appName} URI launch command sent`);
-
-      if (process.platform !== 'linux' || isWsl()) {
-        return;
-      }
 
       if (
         await waitForAntigravityStartup(
           PROCESS_STARTUP_TIMEOUT_MS,
           PROCESS_STARTUP_POLL_INTERVAL_MS,
-          target,
+          resolvedTarget,
         )
       ) {
-        logger.info('Antigravity process detected after URI launch');
+        logger.info(`${appName} process detected after URI launch`);
         return;
       }
 
-      logger.warn(
-        `URI launch did not keep ${appName} running on Linux. Falling back to executable launch.`,
-      );
+      logger.warn(`URI launch did not start ${appName}. Falling back to executable launch.`);
     } else {
       logger.warn('URI launch failed, trying executable path...');
     }

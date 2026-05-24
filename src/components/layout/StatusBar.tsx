@@ -5,41 +5,55 @@ import {
   startAntigravity,
   closeAntigravity,
 } from '@/modules/antigravity-runtime/actions/process';
+import type { AntigravityAppTarget } from '@/modules/account/types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/shared/ui/utils';
-import { Play, Square, Loader2, Power } from 'lucide-react';
+import { Activity, ChevronUp, Code2, Loader2, Play, Power, Square, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface StatusBarProps {
   isCollapsed?: boolean;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({ isCollapsed = false }) => {
-  const { t } = useTranslation();
+interface ServiceStatus {
+  target: AntigravityAppTarget;
+  label: string;
+  icon: React.ElementType;
+  isRunning: boolean;
+  isLoading: boolean;
+  isPending: boolean;
+  toggle: () => void;
+}
+
+function useServiceStatus(target: AntigravityAppTarget) {
   const queryClient = useQueryClient();
 
   const { data: isRunning, isLoading } = useQuery({
-    queryKey: ['process', 'status'],
-    queryFn: isProcessRunning,
+    queryKey: ['process', 'status', target],
+    queryFn: () => isProcessRunning(target),
     refetchInterval: 10000,
   });
 
   const startMutation = useMutation({
-    mutationFn: startAntigravity,
+    mutationFn: () => startAntigravity(target),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['process', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['process', 'status', target] });
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: closeAntigravity,
+    mutationFn: () => closeAntigravity(target),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['process', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['process', 'status', target] });
     },
   });
 
-  const handleToggle = () => {
+  const toggle = () => {
     if (isRunning) {
       stopMutation.mutate();
     } else {
@@ -47,104 +61,174 @@ export const StatusBar: React.FC<StatusBarProps> = ({ isCollapsed = false }) => 
     }
   };
 
-  const isPending = startMutation.isPending || stopMutation.isPending;
+  return {
+    isRunning: Boolean(isRunning),
+    isLoading,
+    isPending: startMutation.isPending || stopMutation.isPending,
+    toggle,
+  };
+}
 
-  // Collapsed View
-  if (isCollapsed) {
-    return (
-      <div className="flex justify-center py-2">
-        <TooltipProvider>
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleToggle}
-                disabled={isLoading || isPending}
-                className={cn(
-                  'h-10 w-10 rounded-lg transition-all duration-300',
-                  isRunning
-                    ? 'bg-green-100/50 text-green-700 hover:bg-green-100 hover:text-green-800 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
-                    : 'bg-red-100/50 text-red-700 hover:bg-red-100 hover:text-red-800 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50',
-                )}
-              >
-                {isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Power className="h-5 w-5" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="flex items-center gap-2">
-              <div
-                className={cn('h-2 w-2 rounded-full', isRunning ? 'bg-green-500' : 'bg-red-500')}
-              />
-              <p>
-                {isLoading
-                  ? t('status.checking')
-                  : isRunning
-                    ? t('status.running')
-                    : t('status.stopped')}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-    );
-  }
+function ServiceRow({ service }: { service: ServiceStatus }) {
+  const { t } = useTranslation();
+  const Icon = service.icon;
+  const isBusy = service.isLoading || service.isPending;
 
-  // Expanded View
   return (
-    <div
-      className={cn(
-        'flex items-center justify-between overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium ring-1 transition-colors ring-inset',
-        isRunning
-          ? 'bg-green-100 text-green-900 ring-green-200 dark:bg-green-900/20 dark:text-green-100 dark:ring-green-900/50'
-          : 'bg-red-100 text-red-900 ring-red-200 dark:bg-red-900/20 dark:text-red-100 dark:ring-red-900/50',
-      )}
-    >
-      <div className="flex flex-1 items-start gap-3">
-        {isLoading ? (
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
-        ) : isRunning ? (
-          <div className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-        ) : (
-          <div className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
-        )}
-        <div className="flex flex-col gap-1 leading-none">
-          <span className="text-xs font-semibold tracking-wider uppercase opacity-80">Status</span>
-          <span className="text-sm leading-tight font-medium">
-            {isLoading
-              ? t('status.checking')
-              : isRunning
-                ? t('status.running')
-                : t('status.stopped')}
-          </span>
+    <div className="hover:bg-accent/60 flex min-h-12 items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+            service.isRunning
+              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">{service.label}</div>
+          <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+            {service.isLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  service.isRunning ? 'bg-green-500' : 'bg-red-500',
+                )}
+              />
+            )}
+            <span>
+              {service.isLoading
+                ? t('status.checking_short')
+                : service.isRunning
+                  ? t('status.running_short')
+                  : t('status.stopped_short')}
+            </span>
+          </div>
         </div>
       </div>
       <Button
         variant="ghost"
         size="sm"
-        onClick={handleToggle}
-        disabled={isLoading || isPending}
+        onClick={service.toggle}
+        disabled={isBusy}
         className={cn(
-          'ml-2 h-8 shrink-0 rounded-md border px-3 transition-all',
-          isRunning
-            ? 'border-green-200 bg-green-200/50 text-green-900 hover:bg-green-200 dark:border-green-800 dark:bg-green-800/30 dark:text-green-100 dark:hover:bg-green-800/50'
-            : 'border-red-200 bg-red-200/50 text-red-900 hover:bg-red-200 dark:border-red-800 dark:bg-red-800/30 dark:text-red-100 dark:hover:bg-red-800/50',
+          'h-8 shrink-0 rounded-md border px-2.5',
+          service.isRunning
+            ? 'border-green-200 text-green-700 hover:bg-green-100 dark:border-green-800 dark:text-green-300 dark:hover:bg-green-900/30'
+            : 'border-red-200 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30',
         )}
       >
-        {isPending ? (
+        {service.isPending ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : isRunning ? (
+        ) : service.isRunning ? (
           <Square className="h-3.5 w-3.5 fill-current" />
         ) : (
           <Play className="h-3.5 w-3.5 fill-current" />
         )}
-        <span className="ml-2 font-semibold">
-          {isRunning ? t('action.stop') : t('action.start')}
+        <span className="ml-1.5 text-xs font-semibold">
+          {service.isRunning ? t('action.stop') : t('action.start')}
         </span>
       </Button>
     </div>
+  );
+}
+
+export const StatusBar: React.FC<StatusBarProps> = ({ isCollapsed = false }) => {
+  const { t } = useTranslation();
+  const classicStatus = useServiceStatus('classic');
+  const ideStatus = useServiceStatus('ide');
+  const services: ServiceStatus[] = [
+    {
+      target: 'classic',
+      label: 'Antigravity',
+      icon: Workflow,
+      ...classicStatus,
+    },
+    {
+      target: 'ide',
+      label: 'Antigravity IDE',
+      icon: Code2,
+      ...ideStatus,
+    },
+  ];
+
+  const runningCount = services.filter((service) => service.isRunning).length;
+  const totalCount = services.length;
+  const isChecking = services.some((service) => service.isLoading);
+  const hasPendingAction = services.some((service) => service.isPending);
+  const summary = isChecking
+    ? t('status.checking_short')
+    : runningCount === 0
+      ? t('status.all_stopped')
+      : runningCount === totalCount
+        ? t('status.all_running')
+        : t('status.partial_running', { running: runningCount, total: totalCount });
+
+  const triggerClassName = isCollapsed
+    ? 'mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background/80 text-foreground shadow-sm transition-colors hover:bg-accent'
+    : 'flex w-full items-center justify-between overflow-hidden rounded-lg border border-border bg-background/80 px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-accent/70';
+
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={triggerClassName} aria-label={t('status.open_dashboard')}>
+          {isCollapsed ? (
+            <div className="relative">
+              {hasPendingAction ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Power className="h-5 w-5" />
+              )}
+              <span
+                className={cn(
+                  'border-background absolute -right-1 -bottom-1 h-2.5 w-2.5 rounded-full border-2',
+                  runningCount > 0 ? 'bg-green-500' : 'bg-red-500',
+                )}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="bg-muted text-muted-foreground relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
+                  {hasPendingAction ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                  <span
+                    className={cn(
+                      'border-background absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2',
+                      runningCount > 0 ? 'bg-green-500' : 'bg-red-500',
+                    )}
+                  />
+                </div>
+                <div className="min-w-0 text-left">
+                  <div className="text-xs font-semibold tracking-wider uppercase opacity-80">
+                    {t('status.services')}
+                  </div>
+                  <div className="truncate text-sm leading-tight font-medium">{summary}</div>
+                </div>
+              </div>
+              <ChevronUp className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
+            </>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-2">
+        <div className="px-2 pb-2">
+          <div className="text-sm font-semibold">{t('status.dashboard_title')}</div>
+          <div className="text-muted-foreground mt-0.5 text-xs">{summary}</div>
+        </div>
+        <div className="space-y-1">
+          {services.map((service) => (
+            <ServiceRow key={service.target} service={service} />
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };

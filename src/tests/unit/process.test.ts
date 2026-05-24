@@ -41,6 +41,16 @@ vi.mock('@/shared/platform/paths', () => ({
       processItem.executablePath === 'C:\\Program Files\\Antigravity\\Antigravity.exe'
     );
   }),
+  isTargetAntigravityExecutableProcessCandidate: vi.fn((processItem, target) => {
+    const normalizedTarget = target === 'ide' ? 'ide' : 'classic';
+    const executablePath = processItem.executablePath;
+
+    if (normalizedTarget === 'ide') {
+      return executablePath === 'C:\\Program Files\\Antigravity IDE\\Antigravity IDE.exe';
+    }
+
+    return executablePath === 'C:\\Program Files\\Antigravity\\Antigravity.exe';
+  }),
   isTargetAntigravityProcessCandidate: vi.fn((processItem, target) => {
     const normalizedTarget = target === 'ide' ? 'ide' : 'classic';
     const name = processItem.name.toLowerCase();
@@ -315,6 +325,25 @@ describe('Process Handler', () => {
       expect(killSpy).not.toHaveBeenCalled();
     });
 
+    it('should include IDE helper processes when closing IDE target', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      Object.defineProperty(process, 'pid', { value: 1000, configurable: true });
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+      mockFindProcess.mockResolvedValue([
+        {
+          pid: 12345,
+          name: 'Antigravity IDE.exe',
+          bin: 'C:\\Program Files\\Antigravity IDE\\Antigravity IDE.exe',
+          cmd: '"C:\\Program Files\\Antigravity IDE\\Antigravity IDE.exe" --type=renderer',
+        },
+      ]);
+
+      await closeAntigravity('ide');
+
+      expect(killSpy).toHaveBeenCalledWith(12345, 'SIGKILL');
+    });
+
     it('should scan all processes so configured custom executable names can be closed', async () => {
       Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
       Object.defineProperty(process, 'pid', { value: 1000, configurable: true });
@@ -343,6 +372,34 @@ describe('Process Handler', () => {
   });
 
   describe('startAntigravity', () => {
+    it('should fall back to executable launch when Classic URI launch does not start a process', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      childProcessMock.exec.mockImplementation((command: string, callback: Function) => {
+        callback(null, { stdout: '', stderr: '' });
+        return { unref: vi.fn(), kill: vi.fn() };
+      });
+      mockFindProcess.mockResolvedValue([]);
+      vi.mocked(getAntigravityExecutablePath).mockReturnValue(
+        'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity\\Antigravity.exe',
+      );
+
+      await startAntigravity(undefined, true);
+
+      expect(childProcessMock.exec).toHaveBeenCalledWith(
+        'start "" "antigravity://oauth-success"',
+        expect.any(Function),
+      );
+      expect(childProcessMock.spawn).toHaveBeenCalledWith(
+        'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity\\Antigravity.exe',
+        [],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+          cwd: 'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity',
+        }),
+      );
+    }, 10000);
+
     it('should open the configured macOS app path instead of only using the app name', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
       mockFindProcess.mockResolvedValue([]);
@@ -356,6 +413,32 @@ describe('Process Handler', () => {
         detached: true,
         stdio: 'ignore',
       });
+    });
+
+    it('should not hide Windows GUI windows when launching Antigravity IDE', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      mockFindProcess.mockResolvedValue([]);
+      vi.mocked(getAntigravityExecutablePath).mockReturnValue(
+        'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe',
+      );
+
+      await startAntigravity('ide', false);
+
+      expect(childProcessMock.spawn).toHaveBeenCalledWith(
+        'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe',
+        [],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+          cwd: 'C:\\Users\\Alice\\AppData\\Local\\Programs\\Antigravity IDE',
+        }),
+      );
+      const spawnCall = childProcessMock.spawn.mock.calls[0] as unknown as [
+        string,
+        string[],
+        Record<string, unknown>,
+      ];
+      expect(spawnCall[2]).not.toHaveProperty('windowsHide');
     });
   });
 

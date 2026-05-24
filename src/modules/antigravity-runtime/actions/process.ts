@@ -1,13 +1,14 @@
 import { ipc } from '@/ipc/manager';
+import type { AntigravityAppTarget } from '@/modules/account/types';
 
-export function isProcessRunning() {
-  return ipc.client.proc.isProcessRunning();
+export function isProcessRunning(target?: AntigravityAppTarget) {
+  return ipc.client.proc.isProcessRunning({ target });
 }
 
-export function closeAntigravity() {
-  return ipc.client.proc.closeAntigravity();
+export function closeAntigravity(target?: AntigravityAppTarget) {
+  return ipc.client.proc.closeAntigravity({ target });
 }
 
-export function startAntigravity() {
-  return ipc.client.proc.startAntigravity();
+export function startAntigravity(target?: AntigravityAppTarget) {
+  return ipc.client.proc.startAntigravity({ target });
 }
