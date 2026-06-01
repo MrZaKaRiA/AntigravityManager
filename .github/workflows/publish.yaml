@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build artifacts only, skip uploading to GitHub Release"
+        description: 'Build artifacts only, skip uploading to GitHub Release'
         required: false
         type: boolean
         default: true
       allow_update_published_release:
-        description: "Allow uploading assets to an already published release"
+        description: 'Allow uploading assets to an already published release'
         required: false
         type: boolean
         default: false
@@ -54,7 +54,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: "npm"
+          cache: 'npm'
 
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
@@ -88,6 +88,14 @@ jobs:
         if: matrix.platform != 'darwin'
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+          AGM_OTEL_DEBUG: 'false'
+          OTEL_TRACES_EXPORTER: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT != '' && 'otlp' || 'none' }}
+          OTEL_METRICS_EXPORTER: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT != '' && 'otlp' || 'none' }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          OTEL_SERVICE_NAME: ${{ secrets.OTEL_SERVICE_NAME || 'antigravity-manager' }}
+          OTEL_RESOURCE_ATTRIBUTES: ${{ secrets.OTEL_RESOURCE_ATTRIBUTES || 'service.namespace=desktop,deployment.environment=production' }}
+          CLARITY_PROJECT_ID: ${{ secrets.CLARITY_PROJECT_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
@@ -105,6 +113,14 @@ jobs:
           command: npm run make -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+          AGM_OTEL_DEBUG: 'false'
+          OTEL_TRACES_EXPORTER: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT != '' && 'otlp' || 'none' }}
+          OTEL_METRICS_EXPORTER: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT != '' && 'otlp' || 'none' }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          OTEL_SERVICE_NAME: ${{ secrets.OTEL_SERVICE_NAME || 'antigravity-manager' }}
+          OTEL_RESOURCE_ATTRIBUTES: ${{ secrets.OTEL_RESOURCE_ATTRIBUTES || 'service.namespace=desktop,deployment.environment=production' }}
+          CLARITY_PROJECT_ID: ${{ secrets.CLARITY_PROJECT_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
@@ -139,6 +155,7 @@ jobs:
     if: needs.build.result == 'success' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true')
     permissions:
       contents: write
+      pull-requests: write
     # Configure the `release` environment with required reviewers in GitHub settings
     # to enforce a manual approval gate before assets are uploaded.
     environment:
@@ -147,6 +164,8 @@ jobs:
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
@@ -159,7 +178,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: "npm"
+          cache: 'npm'
 
       - name: Resolve release tag
         id: release_tag
