@@ -241,3 +241,35 @@ jobs:
 
           printf 'Uploading %s assets to %s\n' "${#files[@]}" "$RELEASE_TAG"
           gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+
+      - name: Update flake.nix from release checksums
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          amd64_checksums="$(find release-assets -type f -name 'sha256sums-linux-amd64.txt' | head -n 1)"
+          aarch64_checksums="$(find release-assets -type f -name 'sha256sums-linux-aarch64.txt' | head -n 1)"
+
+          if [ -z "$amd64_checksums" ] || [ -z "$aarch64_checksums" ]; then
+            echo "::error::Missing Linux checksum files required to update flake.nix"
+            exit 1
+          fi
+
+          node scripts/update-flake-release.mjs \
+            --version "$version" \
+            --amd64-checksums "$amd64_checksums" \
+            --arm64-checksums "$aarch64_checksums"
+
+      - name: Create flake update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: chore/update-flake-${{ steps.release_tag.outputs.tag }}
+          delete-branch: true
+          title: 'chore(nix): update flake to ${{ steps.release_tag.outputs.tag }}'
+          commit-message: 'chore(nix): update flake to ${{ steps.release_tag.outputs.tag }}'
+          body: |
+            Update `flake.nix` to match `${{ steps.release_tag.outputs.tag }}` release assets.
+
+            The hashes come from the Linux checksum files generated during the release build.
