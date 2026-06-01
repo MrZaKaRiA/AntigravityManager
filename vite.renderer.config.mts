@@ -5,11 +5,21 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import path from 'path';
 import { codeInspectorPlugin } from 'code-inspector-plugin';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
+import {
+  createClarityBuildConfig,
+  type ClarityBuildEnv,
+} from './src/shared/analytics/clarityConfig';
+
+const clarityBuildEnvKeys = ['CLARITY_PROJECT_ID', 'NODE_ENV'] as const;
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || env.SENTRY_AUTH_TOKEN;
   const shouldEnableSentry = mode === 'production' && Boolean(sentryAuthToken);
+  const clarityBuildEnv = Object.fromEntries(
+    clarityBuildEnvKeys.map((key) => [key, process.env[key] || env[key] || '']),
+  ) as ClarityBuildEnv;
+  clarityBuildEnv.NODE_ENV = clarityBuildEnv.NODE_ENV || mode;
 
   return {
     plugins: [
@@ -51,6 +61,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       'process.env.SENTRY_DSN': JSON.stringify(process.env.SENTRY_DSN || env.SENTRY_DSN),
+      CLARITY_BUILD_CONFIG: JSON.stringify(createClarityBuildConfig(clarityBuildEnv)),
     },
     resolve: {
       preserveSymlinks: true,

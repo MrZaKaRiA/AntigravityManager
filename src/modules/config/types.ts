@@ -44,6 +44,7 @@ export const AppConfigSchema = z.object({
   auto_startup: z.boolean(),
   error_reporting_enabled: z.boolean(),
   telemetry_enabled: z.boolean().default(true),
+  clarity_enabled: z.boolean().default(true),
   privacy_consent_asked: z.boolean().optional().default(false), // Optional for backward compatibility
   default_export_path: z.string().nullable().optional(), // Export path
   model_visibility: z.record(z.string(), z.boolean()).default({}), // Model visibility preferences
@@ -76,6 +77,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   auto_startup: false,
   error_reporting_enabled: true,
   telemetry_enabled: true,
+  clarity_enabled: true,
   privacy_consent_asked: false, // Whether the user has been asked for consent
   default_export_path: null,
   model_visibility: {}, // Model visibility preferences
