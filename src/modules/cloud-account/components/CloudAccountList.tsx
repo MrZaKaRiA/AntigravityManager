@@ -14,100 +14,31 @@ import {
   useExportCloudAccounts,
   useImportCloudAccounts,
 } from '@/modules/cloud-account/hooks/useCloudAccounts';
-import {
-  CloudAccountCard,
-  CompactCloudAccountCard,
-} from '@/modules/cloud-account/components/CloudAccountCard';
-import { AccountTierFilterDropdown } from '@/modules/cloud-account/components/AccountTierFilterDropdown';
 import { IdentityProfileDialog } from '@/modules/identity-profile/components/IdentityProfileDialog';
 import { CloudAccount } from '@/modules/cloud-account/types';
 import type { AntigravityAppTarget } from '@/modules/account/types';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-
-import {
-  Plus,
-  Cloud,
-  Zap,
-  RefreshCcw,
-  Download,
-  CheckSquare,
-  Trash2,
-  X,
-  RefreshCw,
-  LayoutGrid,
-  List,
-  Columns2,
-  Columns3,
-  SortAsc,
-  LayoutList,
-  Upload,
-  FileDown,
-  Check,
-  Loader2,
-} from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLocalizedErrorMessage } from '@/shared/utils/errorMessages';
 import { useAppConfig } from '@/modules/config/hooks/useAppConfig';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { isNumber } from 'lodash-es';
 import {
-  clampQuotaPercentage,
   formatAiCreditsAmount,
   type AccountSortKey,
-  type QuotaStatus,
 } from '@/modules/cloud-account/utils/quota-display';
 import { ACCOUNT_TIER_UNKNOWN_KEY } from '@/modules/cloud-account/utils/account-tier-filter';
 import { shouldAutoSubmitGoogleAuthCode } from '@/modules/cloud-account/utils/googleAuthSubmission';
 import { useCloudAccountListView } from '@/modules/cloud-account/hooks/useCloudAccountListView';
-
-export type GridLayout = 'auto' | '2-col' | '3-col' | 'list' | 'compact';
-
-const GRID_LAYOUT_CLASSES: Record<GridLayout, string> = {
-  auto: 'grid gap-4 md:grid-cols-2 xl:grid-cols-3',
-  '2-col': 'grid gap-4 grid-cols-2',
-  '3-col': 'grid gap-4 grid-cols-3',
-  list: 'grid gap-4 grid-cols-1',
-  compact: 'flex flex-col gap-2',
-};
-
-const GLOBAL_QUOTA_BAR_COLOR_CLASS_BY_STATUS: Record<QuotaStatus, string> = {
-  high: 'bg-gradient-to-r from-emerald-400 to-teal-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]',
-  medium: 'bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
-  low: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_8px_rgba(239,68,68,0.3)]',
-};
-
-const GLOBAL_QUOTA_TEXT_COLOR_CLASS_BY_STATUS: Record<QuotaStatus, string> = {
-  high: 'text-emerald-600 dark:text-emerald-400 font-semibold',
-  medium: 'text-amber-600 dark:text-amber-500 font-semibold',
-  low: 'text-rose-600 dark:text-rose-400 font-semibold',
-};
+import type { GridLayout } from '@/modules/cloud-account/components/CloudAccountList.constants';
+import { CloudAccountBatchActionBar } from '@/modules/cloud-account/components/CloudAccountBatchActionBar';
+import { CloudAccountGrid } from '@/modules/cloud-account/components/CloudAccountGrid';
+import {
+  CloudAccountLoadError,
+  CloudAccountLoadingState,
+} from '@/modules/cloud-account/components/CloudAccountListFallbacks';
+import { CloudAccountListSummary } from '@/modules/cloud-account/components/CloudAccountListSummary';
+import { CloudAccountToolbar } from '@/modules/cloud-account/components/CloudAccountToolbar';
 
 export function CloudAccountList() {
   const { t } = useTranslation();
@@ -137,21 +68,7 @@ export function CloudAccountList() {
     }
   };
 
-  const sortOptions = [
-    'recently-used',
-    'quota-overall',
-    'quota-claude',
-    'quota-pro3',
-    'quota-flash',
-  ] as const;
   const currentSort: AccountSortKey = (config?.account_sort as AccountSortKey) || 'recently-used';
-  const sortI18nKeys: Record<AccountSortKey, string> = {
-    'recently-used': 'cloud.sort.recentlyUsed',
-    'quota-overall': 'cloud.sort.quotaOverall',
-    'quota-claude': 'cloud.sort.quotaClaude',
-    'quota-pro3': 'cloud.sort.quotaPro3',
-    'quota-flash': 'cloud.sort.quotaFlash',
-  };
 
   const {
     sortedAccounts,
@@ -468,7 +385,7 @@ export function CloudAccountList() {
     }
   };
 
-  const handleImportFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -666,556 +583,173 @@ export function CloudAccountList() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center p-8">
-        <Loader2 className="animate-spin" />
-      </div>
+  const handleImportDialogOpenChange = (open: boolean) => {
+    setIsImportDialogOpen(open);
+    if (!open) {
+      setImportFileContent(null);
+      setImportFileName('');
+      setImportStrategy('merge');
+    }
+  };
+
+  const handleAddDialogOpenChange = (open: boolean) => {
+    setIsAddDialogOpen(open);
+    if (!open) {
+      setAuthCode('');
+      lastSubmittedAuthCodeRef.current = null;
+    }
+  };
+
+  const handleOAuthClientChange = (value: string) => {
+    setSelectedOAuthClientKey(value);
+    setActiveOAuthClientMutation.mutate(
+      {
+        clientKey: value,
+      },
+      {
+        onError: (error) => {
+          toast({
+            title: t('cloud.toast.updateSettingsFailed'),
+            description: getLocalizedErrorMessage(error, t),
+            variant: 'destructive',
+          });
+        },
+      },
     );
+  };
+
+  const handleSortChange = async (option: AccountSortKey) => {
+    if (config) {
+      await saveConfig({ ...config, account_sort: option });
+    }
+  };
+
+  if (isLoading) {
+    return <CloudAccountLoadingState />;
   }
 
   if (isError) {
-    return (
-      <div
-        className="col-span-full rounded-lg border border-dashed p-8 text-center"
-        data-testid="cloud-load-error-fallback"
-      >
-        <Cloud className="text-muted-foreground mx-auto mb-3 h-10 w-10 opacity-40" />
-        <div className="text-sm font-medium">{t('cloud.error.loadFailed')}</div>
-        <div className="text-muted-foreground mt-2 text-xs">{t('action.retry')}</div>
-        <Button
-          className="mt-4"
-          variant="outline"
-          onClick={() => void refetch()}
-          data-testid="cloud-load-error-retry"
-        >
-          <RefreshCw className="mr-2 h-4 w-4" />
-          {t('action.retry')}
-        </Button>
-      </div>
-    );
+    return <CloudAccountLoadError onRetry={() => void refetch()} />;
   }
+
+  const allVisibleSelected =
+    visibleAccountIds.length > 0 && visibleAccountIds.every((id) => selectedIds.has(id));
+  const refreshingAccountId = refreshMutation.isPending
+    ? refreshMutation.variables?.accountId
+    : undefined;
+  const deletingAccountId = deleteMutation.isPending
+    ? deleteMutation.variables?.accountId
+    : undefined;
+  const switchingAccountId = switchMutation.isPending
+    ? switchMutation.variables?.accountId
+    : undefined;
+  const switchingTarget = switchMutation.isPending
+    ? switchMutation.variables?.appTarget
+    : undefined;
 
   return (
     <div className="space-y-5 pb-20">
-      <div className="bg-card rounded-xl border border-border/80 p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-5">
-          <div className="flex shrink-0 flex-col gap-1.5">
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('cloud.title')}</h2>
-            <p className="text-muted-foreground text-sm max-w-2xl">{t('cloud.description')}</p>
-          </div>
-          <div className="flex flex-wrap gap-2.5">
-            <div className="bg-muted/30 rounded-xl border border-border/40 px-4 py-2.5 min-w-[80px]">
-              <div className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
-                {t('cloud.card.actions')}
-              </div>
-              <div className="text-lg font-bold mt-0.5">{totalAccounts}</div>
-            </div>
-            <div className="bg-muted/30 rounded-xl border border-border/40 px-4 py-2.5 min-w-[80px]">
-              <div className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
-                {t('cloud.card.active')}
-              </div>
-              <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{activeAccounts}</div>
-            </div>
-            <div className="bg-muted/30 rounded-xl border border-border/40 px-4 py-2.5 min-w-[80px]">
-              <div className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
-                {t('cloud.card.rateLimited')}
-              </div>
-              <div className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">{rateLimitedAccounts}</div>
-            </div>
-            {/* Global Quota */}
-            {overallQuotaPercentage !== null && (
-              <div className="bg-muted/30 rounded-xl border border-border/40 px-4 py-2.5 min-w-[150px]">
-                <div className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
-                  {t('cloud.globalQuota')}
-                </div>
-                <div className="flex items-center gap-2.5 mt-1.5">
-                  <span
-                    className={`text-base font-bold ${GLOBAL_QUOTA_TEXT_COLOR_CLASS_BY_STATUS[effectiveQuotaStatus]}`}
-                  >
-                    {overallQuotaPercentage}%
-                  </span>
-                  <div className="bg-muted/60 h-2 w-20 overflow-hidden rounded-full border border-border/20 shadow-inner">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${GLOBAL_QUOTA_BAR_COLOR_CLASS_BY_STATUS[effectiveQuotaStatus]}`}
-                      style={{ width: `${clampQuotaPercentage(overallQuotaPercentage)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <CloudAccountListSummary
+        totalAccounts={totalAccounts}
+        activeAccounts={activeAccounts}
+        rateLimitedAccounts={rateLimitedAccounts}
+        overallQuotaPercentage={overallQuotaPercentage}
+        effectiveQuotaStatus={effectiveQuotaStatus}
+      />
 
-      <div className="bg-card flex flex-wrap items-center gap-2 rounded-lg border p-3">
-        <div className="bg-muted/50 flex items-center gap-2 rounded-md border px-3 py-2">
-          <div className="flex items-center gap-2">
-            <Zap
-              className={`h-4 w-4 ${autoSwitchEnabled ? 'fill-yellow-500 text-yellow-500' : 'text-muted-foreground'}`}
-            />
-            <Label htmlFor="auto-switch" className="cursor-pointer text-sm font-medium">
-              {t('cloud.autoSwitch')}
-            </Label>
-          </div>
-          <Switch
-            id="auto-switch"
-            checked={!!autoSwitchEnabled}
-            onCheckedChange={handleToggleAutoSwitch}
-            disabled={isSettingsLoading || setAutoSwitchMutation.isPending}
-          />
-        </div>
+      <CloudAccountToolbar
+        autoSwitchEnabled={autoSwitchEnabled}
+        isSettingsLoading={isSettingsLoading}
+        isSetAutoSwitchPending={setAutoSwitchMutation.isPending}
+        isForcePollPending={forcePollMutation.isPending}
+        isSyncPending={syncMutation.isPending}
+        allVisibleSelected={allVisibleSelected}
+        selectedCount={selectedIds.size}
+        isExportDialogOpen={isExportDialogOpen}
+        isImportDialogOpen={isImportDialogOpen}
+        isAddDialogOpen={isAddDialogOpen}
+        isExportPending={exportMutation.isPending}
+        isImportPending={importMutation.isPending}
+        isAddPending={addMutation.isPending}
+        isOAuthClientsLoading={isOAuthClientsLoading}
+        isSetActiveOAuthClientPending={setActiveOAuthClientMutation.isPending}
+        importStrategy={importStrategy}
+        importFileContent={importFileContent}
+        importFileName={importFileName}
+        authCode={authCode}
+        selectedOAuthClientKey={selectedOAuthClientKey}
+        oauthClients={oauthClients}
+        fileInputRef={fileInputRef}
+        tierOptions={tierOptions}
+        effectiveSelectedTierKeySet={effectiveSelectedTierKeySet}
+        hasActiveTierFilter={hasActiveTierFilter}
+        tierFilterButtonLabel={tierFilterButtonLabel}
+        currentSort={currentSort}
+        gridLayout={gridLayout}
+        getTierOptionLabel={getTierOptionLabel}
+        onToggleAutoSwitch={handleToggleAutoSwitch}
+        onToggleSelectAllAccounts={toggleSelectAllAccounts}
+        onForcePoll={handleForcePoll}
+        onSyncLocal={handleSyncLocal}
+        onExportDialogOpenChange={setIsExportDialogOpen}
+        onImportDialogOpenChange={handleImportDialogOpenChange}
+        onAddDialogOpenChange={handleAddDialogOpenChange}
+        onExport={(stripTokens) => {
+          handleExport(stripTokens);
+        }}
+        onImportFileSelect={handleImportFileSelect}
+        onImportStrategyChange={setImportStrategy}
+        onImport={handleImport}
+        onOAuthClientChange={handleOAuthClientChange}
+        onOpenGoogleAuthSignIn={() => {
+          openGoogleAuthSignIn();
+        }}
+        onAuthCodeChange={setAuthCode}
+        onSubmitAuthCode={() => {
+          submitAuthCode();
+        }}
+        onResetTierFilter={() => {
+          resetTierFilter();
+        }}
+        onToggleTierFilter={(tierKey, checked) => {
+          toggleTierFilter(tierKey, checked);
+        }}
+        onSortChange={(option) => {
+          handleSortChange(option);
+        }}
+        onUpdateGridLayout={(layout) => {
+          updateGridLayout(layout);
+        }}
+      />
 
-        <Button
-          variant="ghost"
-          onClick={toggleSelectAllAccounts}
-          title={t('cloud.batch.selectAll')}
-          className="cursor-pointer"
-        >
-          <CheckSquare
-            className={`mr-2 h-4 w-4 ${selectedIds.size > 0 && selectedIds.size === sortedAccounts.length ? 'text-primary fill-primary/20' : ''}`}
-          />
-          {t('cloud.batch.selectAll')}
-        </Button>
+      <CloudAccountGrid
+        accounts={sortedAccounts}
+        sourceAccountCount={accounts?.length ?? 0}
+        gridLayout={gridLayout}
+        selectedIds={selectedIds}
+        hasActiveTierFilter={hasActiveTierFilter}
+        refreshingAccountId={refreshingAccountId}
+        deletingAccountId={deletingAccountId}
+        switchingAccountId={switchingAccountId}
+        switchingTarget={switchingTarget}
+        onRefresh={handleRefresh}
+        onDelete={handleDelete}
+        onSwitch={handleSwitch}
+        onManageIdentity={handleManageIdentity}
+        onToggleSelection={setSelectionState}
+        onResetTierFilter={() => {
+          resetTierFilter();
+        }}
+      />
 
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleForcePoll}
-          title={t('cloud.checkQuota')}
-          disabled={forcePollMutation.isPending}
-          className="cursor-pointer"
-        >
-          <RefreshCcw className={`h-4 w-4 ${forcePollMutation.isPending ? 'animate-spin' : ''}`} />
-        </Button>
-
-        <Button
-          variant="outline"
-          onClick={handleSyncLocal}
-          disabled={syncMutation.isPending}
-          title={t('cloud.syncFromIde')}
-          className="cursor-pointer"
-        >
-          <Download className={`mr-2 h-4 w-4 ${syncMutation.isPending ? 'animate-bounce' : ''}`} />
-          {t('cloud.syncFromIde')}
-        </Button>
-
-        <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" className="cursor-pointer">
-              <FileDown className="mr-2 h-4 w-4" />
-              {t('cloud.exportImport.export')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>{t('cloud.exportImport.exportTitle')}</DialogTitle>
-              <DialogDescription>{t('cloud.exportImport.exportDesc')}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center sm:space-x-0">
-              <Button
-                variant="outline"
-                onClick={() => handleExport(false)}
-                disabled={exportMutation.isPending}
-                className="w-full cursor-pointer sm:flex-1"
-              >
-                {exportMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('cloud.exportImport.includeTokens')}
-              </Button>
-              <Button
-                onClick={() => handleExport(true)}
-                disabled={exportMutation.isPending}
-                className="w-full cursor-pointer sm:flex-1"
-              >
-                {exportMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('cloud.exportImport.stripTokens')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={isImportDialogOpen}
-          onOpenChange={(open) => {
-            setIsImportDialogOpen(open);
-            if (!open) {
-              setImportFileContent(null);
-              setImportFileName('');
-              setImportStrategy('merge');
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button variant="outline" className="cursor-pointer">
-              <Upload className="mr-2 h-4 w-4" />
-              {t('cloud.exportImport.import')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>{t('cloud.exportImport.importTitle')}</DialogTitle>
-              <DialogDescription>{t('cloud.exportImport.importDesc')}</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>{t('cloud.exportImport.selectFile')}</Label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportFileSelect}
-                  className="hidden"
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="cursor-pointer"
-                >
-                  {importFileName || t('cloud.exportImport.selectFile')}
-                </Button>
-              </div>
-              <div className="grid gap-2">
-                <Label>{t('cloud.exportImport.importStrategy')}</Label>
-                <Select
-                  value={importStrategy}
-                  onValueChange={(v: 'merge' | 'overwrite' | 'skip-existing') =>
-                    setImportStrategy(v)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="merge">{t('cloud.exportImport.strategyMerge')}</SelectItem>
-                    <SelectItem value="overwrite">
-                      {t('cloud.exportImport.strategyOverwrite')}
-                    </SelectItem>
-                    <SelectItem value="skip-existing">
-                      {t('cloud.exportImport.strategySkip')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={handleImport}
-                disabled={!importFileContent || importMutation.isPending}
-              >
-                {importMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {importMutation.isPending
-                  ? t('cloud.exportImport.importing')
-                  : t('cloud.exportImport.import')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={isAddDialogOpen}
-          onOpenChange={(open) => {
-            setIsAddDialogOpen(open);
-            if (!open) {
-              setAuthCode('');
-              lastSubmittedAuthCodeRef.current = null;
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button className="cursor-pointer">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('cloud.addAccount')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>{t('cloud.authDialog.title')}</DialogTitle>
-              <DialogDescription>{t('cloud.authDialog.description')}</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="oauth-client-select">{t('cloud.authDialog.oauthClient')}</Label>
-                <Select
-                  value={selectedOAuthClientKey || undefined}
-                  onValueChange={(value) => {
-                    setSelectedOAuthClientKey(value);
-                    setActiveOAuthClientMutation.mutate(
-                      {
-                        clientKey: value,
-                      },
-                      {
-                        onError: (error) => {
-                          toast({
-                            title: t('cloud.toast.updateSettingsFailed'),
-                            description: getLocalizedErrorMessage(error, t),
-                            variant: 'destructive',
-                          });
-                        },
-                      },
-                    );
-                  }}
-                  disabled={isOAuthClientsLoading || setActiveOAuthClientMutation.isPending}
-                >
-                  <SelectTrigger id="oauth-client-select">
-                    <SelectValue placeholder={t('cloud.authDialog.oauthClientPlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {oauthClients.map((client) => (
-                      <SelectItem key={client.key} value={client.key}>
-                        {client.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Button variant="outline" className="col-span-4" onClick={openGoogleAuthSignIn}>
-                  <Cloud className="mr-2 h-4 w-4" />
-                  {t('cloud.authDialog.openLogin')}
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="code">{t('cloud.authDialog.authCode')}</Label>
-                <Input
-                  id="code"
-                  placeholder={t('cloud.authDialog.placeholder')}
-                  value={authCode}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    setAuthCode(e.target.value);
-                  }}
-                />
-                <p className="text-muted-foreground text-xs">{t('cloud.authDialog.instruction')}</p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={() => submitAuthCode()}
-                disabled={addMutation.isPending || !authCode}
-              >
-                {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('cloud.authDialog.verify')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Tier Filter + Sort + Layout Selector */}
-        <AccountTierFilterDropdown
-          options={tierOptions}
-          selectedKeys={effectiveSelectedTierKeySet}
-          hasActiveFilter={hasActiveTierFilter}
-          triggerLabel={tierFilterButtonLabel}
-          resetLabel={t('cloud.tierFilter.reset')}
-          getOptionLabel={(option) => getTierOptionLabel(option.key, option.label)}
-          onReset={() => {
-            resetTierFilter();
-          }}
-          onToggle={(tierKey, checked) => {
-            toggleTierFilter(tierKey, checked);
-          }}
-        />
-
-        <div className="flex items-center gap-1 rounded-md border p-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer">
-                <SortAsc className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56" side="bottom" sideOffset={8}>
-              {sortOptions.map((option) => (
-                <DropdownMenuItem
-                  key={option}
-                  className="cursor-pointer"
-                  onClick={async () => {
-                    if (config) {
-                      await saveConfig({ ...config, account_sort: option });
-                    }
-                  }}
-                >
-                  {currentSort === option && <Check className="mr-2 h-4 w-4" />}
-                  <span className={currentSort === option ? '' : 'ml-6'}>
-                    {t(sortI18nKeys[option])}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="ml-auto flex items-center gap-1 rounded-md border p-1">
-          <TooltipProvider delayDuration={0}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={gridLayout === 'auto' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7 cursor-pointer"
-                  onClick={() => updateGridLayout('auto')}
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('cloud.layout.auto')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={gridLayout === '2-col' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7 cursor-pointer"
-                  onClick={() => updateGridLayout('2-col')}
-                >
-                  <Columns2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('cloud.layout.twoCol')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={gridLayout === '3-col' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7 cursor-pointer"
-                  onClick={() => updateGridLayout('3-col')}
-                >
-                  <Columns3 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('cloud.layout.threeCol')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={gridLayout === 'list' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7 cursor-pointer"
-                  onClick={() => updateGridLayout('list')}
-                >
-                  <List className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('cloud.layout.list')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={gridLayout === 'compact' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7 cursor-pointer"
-                  onClick={() => updateGridLayout('compact')}
-                >
-                  <LayoutList className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('cloud.layout.compact')}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
-
-      <div className={GRID_LAYOUT_CLASSES[gridLayout]}>
-        {sortedAccounts.map((account) =>
-          gridLayout === 'compact' ? (
-            <CompactCloudAccountCard
-              key={account.id}
-              account={account}
-              onRefresh={handleRefresh}
-              onDelete={handleDelete}
-              onSwitch={handleSwitch}
-              onManageIdentity={handleManageIdentity}
-              isRefreshing={
-                refreshMutation.isPending && refreshMutation.variables?.accountId === account.id
-              }
-              isDeleting={
-                deleteMutation.isPending && deleteMutation.variables?.accountId === account.id
-              }
-              isSwitching={
-                switchMutation.isPending && switchMutation.variables?.accountId === account.id
-              }
-              switchingTarget={
-                switchMutation.isPending && switchMutation.variables?.accountId === account.id
-                  ? switchMutation.variables?.appTarget
-                  : undefined
-              }
-            />
-          ) : (
-            <CloudAccountCard
-              key={account.id}
-              account={account}
-              onRefresh={handleRefresh}
-              onDelete={handleDelete}
-              onSwitch={handleSwitch}
-              onManageIdentity={handleManageIdentity}
-              isSelected={selectedIds.has(account.id)}
-              onToggleSelection={setSelectionState}
-              isRefreshing={
-                refreshMutation.isPending && refreshMutation.variables?.accountId === account.id
-              }
-              isDeleting={
-                deleteMutation.isPending && deleteMutation.variables?.accountId === account.id
-              }
-              isSwitching={
-                switchMutation.isPending && switchMutation.variables?.accountId === account.id
-              }
-            />
-          ),
-        )}
-
-        {sortedAccounts.length === 0 && hasActiveTierFilter && (accounts?.length ?? 0) > 0 && (
-          <div className="text-muted-foreground bg-muted/20 col-span-full rounded-lg border border-dashed py-14 text-center">
-            <Cloud className="mx-auto mb-3 h-10 w-10 opacity-40" />
-            <div className="text-sm">{t('cloud.list.noFilteredAccounts')}</div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => {
-                resetTierFilter();
-              }}
-            >
-              {t('cloud.tierFilter.reset')}
-            </Button>
-          </div>
-        )}
-
-        {sortedAccounts.length === 0 && (!hasActiveTierFilter || (accounts?.length ?? 0) === 0) && (
-          <div className="text-muted-foreground bg-muted/20 col-span-full rounded-lg border border-dashed py-14 text-center">
-            <Cloud className="mx-auto mb-3 h-10 w-10 opacity-40" />
-            <div className="text-sm">{t('cloud.list.noAccounts')}</div>
-          </div>
-        )}
-      </div>
-
-      {/* Batch Action Bar */}
-      {selectedIds.size > 0 && (
-        <div className="bg-card animate-in fade-in slide-in-from-bottom-4 fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-full border px-6 py-2 shadow-lg">
-          <div className="flex items-center gap-2 border-r pr-4">
-            <span className="text-sm font-semibold">
-              {t('cloud.batch.selected', { count: selectedIds.size })}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 rounded-full"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={refreshSelectedAccounts}>
-              <RefreshCw className="mr-2 h-3 w-3" />
-              {t('cloud.batch.refresh')}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={deleteSelectedAccounts}>
-              <Trash2 className="mr-2 h-3 w-3" />
-              {t('cloud.batch.delete')}
-            </Button>
-          </div>
-        </div>
-      )}
+      <CloudAccountBatchActionBar
+        selectedCount={selectedIds.size}
+        onClearSelection={() => {
+          setSelectedIds(new Set());
+        }}
+        onRefreshSelected={refreshSelectedAccounts}
+        onDeleteSelected={deleteSelectedAccounts}
+      />
 
       <IdentityProfileDialog
         account={identityAccount}
