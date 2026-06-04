@@ -2,6 +2,30 @@
 
 # Changelog
 
+## [0.15.0](https://github.com/Draculabo/AntigravityManager/compare/v0.14.0...v0.15.0) (2026-06-04)
+
+### ✨ Features
+
+* **analytics:** add Microsoft Clarity integration ([10257cd](https://github.com/Draculabo/AntigravityManager/commit/10257cd0c91314b018f59f4d1967e1ac3ac1b76f))
+* **cloud-account:** add tier filtering for account list ([28a8fc9](https://github.com/Draculabo/AntigravityManager/commit/28a8fc9badcbd089e7935fc0809ebf8511ee6e09))
+* integrate custom HSL color tokens and apply global backdrop blur to dialogs and dropdown menus ([8f758ab](https://github.com/Draculabo/AntigravityManager/commit/8f758ab0c175ac30b48e269a70e6cea2c8d68300))
+* **observability:** add OpenTelemetry instrumentation ([c793245](https://github.com/Draculabo/AntigravityManager/commit/c793245b88b236244047d242bf70d99ce800c843))
+* redesign card footer to single-row tooltip actions and upgrade stats metrics container ([554c208](https://github.com/Draculabo/AntigravityManager/commit/554c2081713284bc4c98d9d3b391f2789ff964f2))
+* refine sidebar backdrop opacity and implement border-accented route indicators ([f02146c](https://github.com/Draculabo/AntigravityManager/commit/f02146c9b0e3b74a8bcec0c13556fcbd30b83ba4))
+* **settings:** add observability privacy toggles ([b68aea9](https://github.com/Draculabo/AntigravityManager/commit/b68aea9b6170b4ee3da57474eb0400e9d2a545f2))
+
+### 🐛 Bug Fixes
+
+* use app id and ico icon for Windows dev taskbar ([a899ca3](https://github.com/Draculabo/AntigravityManager/commit/a899ca387c947335d709bdae68f8d30cc9cb7626))
+
+### ♻️ Code Refactoring
+
+* **cloud-account:** extract cloud account list UI sections ([93cf938](https://github.com/Draculabo/AntigravityManager/commit/93cf938b2a1616955aec3b0de9356e646dd1d91b))
+
+### 🔧 Continuous Integration
+
+* **release:** wire observability secrets into publish workflow ([5bcc32e](https://github.com/Draculabo/AntigravityManager/commit/5bcc32eaa37abc5aa61bd9999d4b2f9f1b87ef1f))
+
 ## [0.14.0](https://github.com/Draculabo/AntigravityManager/compare/v0.13.0...v0.14.0) (2026-05-24)
 
 ### ✨ Features
