@@ -260,12 +260,16 @@ jobs:
             --amd64-checksums "$amd64_checksums" \
             --arm64-checksums "$aarch64_checksums"
 
+      - name: Remove downloaded release assets
+        run: rm -rf release-assets
+
       - name: Create flake update pull request
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           base: main
           branch: chore/update-flake-${{ steps.release_tag.outputs.tag }}
+          add-paths: flake.nix
           delete-branch: true
           title: 'chore(nix): update flake to ${{ steps.release_tag.outputs.tag }}'
           commit-message: 'chore(nix): update flake to ${{ steps.release_tag.outputs.tag }}'
