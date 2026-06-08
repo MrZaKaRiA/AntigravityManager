@@ -113,7 +113,10 @@ async function readSafeStorageKey(keyPath: string): Promise<Buffer | null> {
 
     return Buffer.from(hexKey, 'hex');
   } catch (error) {
-    logger.error('Security: Decryption of safeStorage key file failed. Keyring might be locked.', error);
+    logger.error(
+      'Security: Decryption of safeStorage key file failed. Keyring might be locked.',
+      error,
+    );
     throw error;
   }
 }
@@ -303,9 +306,15 @@ async function generatePrimaryMasterKey(): Promise<MasterKeyState> {
     } catch (error) {
       // If we failed to decrypt but the file exists, we should NOT proceed to other fallbacks
       // as they might overwrite the existing file and cause permanent data loss.
-      const fileExists = await fs.access(keyPath).then(() => true).catch(() => false);
+      const fileExists = await fs
+        .access(keyPath)
+        .then(() => true)
+        .catch(() => false);
       if (fileExists) {
-        logger.error('Security: safeStorage key file exists but decryption failed. Keyring might be locked. Stopping to prevent data loss.', error);
+        logger.error(
+          'Security: safeStorage key file exists but decryption failed. Keyring might be locked. Stopping to prevent data loss.',
+          error,
+        );
         throw error;
       }
       logger.warn('Security: safeStorage failed, trying keytar', error);
@@ -352,10 +361,11 @@ async function generatePrimaryMasterKey(): Promise<MasterKeyState> {
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
+const ENCRYPTED_PAYLOAD_VERSION_PREFIX = 'agm_enc_v1:';
 
 /**
  * Encrypts a string using AES-256-GCM.
- * Output format: "iv_hex:auth_tag_hex:ciphertext_hex"
+ * Output format: "agm_enc_v1:iv_hex:auth_tag_hex:ciphertext_hex"
  */
 export async function encrypt(text: string): Promise<string> {
   try {
@@ -377,7 +387,9 @@ function encryptWithKey(key: Buffer, text: string): string {
 
   const authTag = cipher.getAuthTag();
 
-  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+  return `${ENCRYPTED_PAYLOAD_VERSION_PREFIX}${iv.toString('hex')}:${authTag.toString(
+    'hex',
+  )}:${encrypted}`;
 }
 
 function decryptWithKey(
@@ -414,8 +426,16 @@ export async function decryptWithMigration(
     return { value: text };
   }
 
-  const parts = text.split(':');
+  const isVersionedPayload = text.startsWith(ENCRYPTED_PAYLOAD_VERSION_PREFIX);
+  const encryptedPayload = isVersionedPayload
+    ? text.slice(ENCRYPTED_PAYLOAD_VERSION_PREFIX.length)
+    : text;
+  const parts = encryptedPayload.split(':');
   if (parts.length !== 3) {
+    if (isVersionedPayload) {
+      logger.warn('Security: Invalid encrypted format - versioned payload is malformed');
+      throw new Error('Invalid encrypted data format');
+    }
     return { value: text };
   }
 
@@ -432,7 +452,11 @@ export async function decryptWithMigration(
 
   const primary = await getPrimaryMasterKey();
   try {
-    return { value: decryptWithKey(primary.key, ivHex, authTagHex, encryptedHex) };
+    const value = decryptWithKey(primary.key, ivHex, authTagHex, encryptedHex);
+    return {
+      value,
+      reencrypted: isVersionedPayload ? undefined : encryptWithKey(primary.key, value),
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 

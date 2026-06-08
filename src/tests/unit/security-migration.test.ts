@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import keytar from 'keytar';
 import { safeStorage } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { decryptWithMigration } from '../../shared/security/security';
+import { decryptWithMigration, encrypt } from '../../shared/security/security';
 
 const primaryHex = '11'.repeat(32);
 const fallbackHex = '22'.repeat(32);
@@ -112,6 +112,28 @@ function setPlatform(platformName: NodeJS.Platform): void {
 }
 
 describe('decryptWithMigration', () => {
+  it('writes versioned ciphertext and decrypts it', async () => {
+    const plaintext = '{"token":"versioned"}';
+    const ciphertext = await encrypt(plaintext);
+
+    expect(ciphertext).toMatch(/^agm_enc_v1:/);
+
+    const result = await decryptWithMigration(ciphertext);
+
+    expect(result.value).toBe(plaintext);
+    expect(result.reencrypted).toBeUndefined();
+  });
+
+  it('decrypts legacy unprefixed ciphertext and returns a versioned replacement', async () => {
+    const plaintext = '{"token":"legacy-primary"}';
+    const ciphertext = encryptWithKey(Buffer.from(primaryHex, 'hex'), plaintext);
+
+    const result = await decryptWithMigration(ciphertext);
+
+    expect(result.value).toBe(plaintext);
+    expect(result.reencrypted).toMatch(/^agm_enc_v1:/);
+  });
+
   it('falls back to legacy key and re-encrypts', async () => {
     const plaintext = '{"token":"legacy"}';
     const ciphertext = encryptWithKey(Buffer.from(fallbackHex, 'hex'), plaintext);
@@ -131,7 +153,7 @@ describe('decryptWithMigration', () => {
     }
   });
 
-  it('does not use fallback when primary key works', async () => {
+  it('does not use fallback when primary key works for legacy ciphertext', async () => {
     const plaintext = '{"token":"primary"}';
     const ciphertext = encryptWithKey(Buffer.from(primaryHex, 'hex'), plaintext);
 
@@ -139,7 +161,7 @@ describe('decryptWithMigration', () => {
 
     expect(result.value).toBe(plaintext);
     expect(result.usedFallback).toBeUndefined();
-    expect(result.reencrypted).toBeUndefined();
+    expect(result.reencrypted).toMatch(/^agm_enc_v1:/);
   });
 
   it('throws migration error code when legacy keys are unavailable', async () => {
