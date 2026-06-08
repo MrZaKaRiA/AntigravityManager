@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
-import { getLocalizedErrorMessage } from '@/shared/utils/errorMessages';
+import { getErrorDetailsText, getLocalizedErrorMessage } from '@/shared/utils/errorMessages';
 
 const STORAGE_NOT_FOUND_MESSAGE =
   'Antigravity storage.json was not found. Open the target Antigravity app and sign in once, then try switching again.';
@@ -9,6 +9,8 @@ function createT(): TFunction {
   return ((key: string, options?: { defaultValue?: string }) => {
     const messages: Record<string, string> = {
       'error.antigravityStorageJsonNotFound': STORAGE_NOT_FOUND_MESSAGE,
+      'error.dataMigrationFailed': 'Unable to decrypt legacy account data.',
+      'error.dataMigrationHint.relogin': 'Please re-login or re-add your accounts.',
     };
 
     return messages[key] ?? options?.defaultValue ?? key;
@@ -32,5 +34,40 @@ describe('getLocalizedErrorMessage', () => {
     );
 
     expect(message).toBe(STORAGE_NOT_FOUND_MESSAGE);
+  });
+
+  it('localizes backend messages passed through ORPC data', () => {
+    const message = getLocalizedErrorMessage(
+      {
+        message: 'ERR_DATA_MIGRATION_FAILED|HINT_RELOGIN',
+        data: {
+          backendMessage: 'ERR_DATA_MIGRATION_FAILED|HINT_RELOGIN',
+        },
+      },
+      createT(),
+    );
+
+    expect(message).toBe(
+      'Unable to decrypt legacy account data. Please re-login or re-add your accounts.',
+    );
+  });
+});
+
+describe('getErrorDetailsText', () => {
+  it('shows backend stack details from ORPC data', () => {
+    const details = getErrorDetailsText({
+      message: 'Internal server error',
+      data: {
+        requestPath: '["cloud","listCloudAccounts"]',
+        backendCode: 'INTERNAL_SERVER_ERROR',
+        backendStatus: 500,
+        backendMessage: 'ERR_DATA_MIGRATION_FAILED|HINT_RELOGIN',
+        backendStack: 'Error: ERR_DATA_MIGRATION_FAILED|HINT_RELOGIN\n    at decryptWithMigration',
+      },
+    });
+
+    expect(details).toContain('Request path: ["cloud","listCloudAccounts"]');
+    expect(details).toContain('Backend message: ERR_DATA_MIGRATION_FAILED|HINT_RELOGIN');
+    expect(details).toContain('at decryptWithMigration');
   });
 });

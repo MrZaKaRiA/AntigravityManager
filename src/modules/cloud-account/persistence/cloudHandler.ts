@@ -39,6 +39,7 @@ const SQLITE_RETRY_DELAY_MS = 150;
 const SQLITE_MAX_RETRIES = 3;
 const DEVICE_PAYLOAD_SCHEMA_VERSION = 1;
 const ACTIVE_ACCOUNT_SETTING_PREFIX = 'active_cloud_account';
+const DATA_MIGRATION_ERROR_CODE = 'ERR_DATA_MIGRATION_FAILED';
 
 type DrizzleExecutor = Pick<
   BetterSQLite3Database<typeof drizzleSchema>,
@@ -57,6 +58,10 @@ function isSqliteBusyError(error: unknown): boolean {
     return err.message.includes('SQLITE_BUSY') || err.message.includes('SQLITE_LOCKED');
   }
   return false;
+}
+
+function isDataMigrationError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith(`${DATA_MIGRATION_ERROR_CODE}|`);
 }
 
 function sleepSync(ms: number): void {
@@ -550,6 +555,9 @@ export class CloudAccountRepo {
           } catch (error) {
             migrationStats.failedFields += 1;
             logger.error(`Failed to decrypt token for account ${normalizedRow.id}`, error);
+            if (isDataMigrationError(error)) {
+              throw error;
+            }
             continue; // Skip corrupted account
           }
 
@@ -564,6 +572,9 @@ export class CloudAccountRepo {
           } catch (error) {
             migrationStats.failedFields += 1;
             logger.error(`Failed to decrypt quota for account ${normalizedRow.id}`, error);
+            if (isDataMigrationError(error)) {
+              throw error;
+            }
             quotaResult = { value: null, migrated: false }; // Quota is optional, proceed
           }
 
@@ -668,6 +679,9 @@ export class CloudAccountRepo {
           `[CloudAccountRepo] getAccount ${id} failed - Decryption failed for token`,
           error,
         );
+        if (isDataMigrationError(error)) {
+          throw error;
+        }
         return undefined;
       }
 
@@ -684,6 +698,9 @@ export class CloudAccountRepo {
           `[CloudAccountRepo] getAccount ${id} failed - Decryption failed for quota`,
           error,
         );
+        if (isDataMigrationError(error)) {
+          throw error;
+        }
         quotaResult = { value: null, migrated: false };
       }
 

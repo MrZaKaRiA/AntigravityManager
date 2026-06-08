@@ -48,10 +48,14 @@ i18n
             deleteBackup: 'Delete Backup',
             backupCurrent: 'Backup Current',
             retry: 'Retry',
+            details: 'Details',
             openLogs: 'Open Log Directory',
           },
           error: {
             generic: 'An unexpected error occurred.',
+            detailsTitle: 'Error details',
+            detailsDescription:
+              'Backend error details are shown below. They may include local file paths and stack frames.',
             keychainUnavailable: 'Keychain is unavailable.',
             keychainHint: {
               translocation:
@@ -586,10 +590,13 @@ i18n
             deleteBackup: '删除备份',
             backupCurrent: '备份当前账号',
             retry: '重试',
+            details: '详情',
             openLogs: '打开日志目录',
           },
           error: {
             generic: '发生未知错误。',
+            detailsTitle: '错误详情',
+            detailsDescription: '下面显示后端错误详情，可能包含本地文件路径和堆栈信息。',
             keychainUnavailable: 'Keychain 不可用。',
             keychainHint: {
               translocation:
@@ -1105,10 +1112,14 @@ i18n
             deleteBackup: 'Удалить резервную копию',
             backupCurrent: 'Создать бэкап текущего',
             retry: 'Повторить',
+            details: 'Подробности',
             openLogs: 'Открыть папку логов',
           },
           error: {
             generic: 'Произошла непредвиденная ошибка.',
+            detailsTitle: 'Детали ошибки',
+            detailsDescription:
+              'Ниже показаны детали ошибки backend. Они могут содержать локальные пути и стек вызовов.',
             keychainUnavailable: 'Keychain недоступен.',
             keychainHint: {
               translocation:

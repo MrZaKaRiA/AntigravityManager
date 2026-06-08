@@ -28,10 +28,14 @@ const vi = {
     deleteBackup: 'Xóa bản sao lưu',
     backupCurrent: 'Sao lưu tài khoản hiện tại',
     retry: 'Thử lại',
+    details: 'Chi tiết',
     openLogs: 'Mở thư mục log',
   },
   error: {
     generic: 'Đã xảy ra lỗi không mong đợi.',
+    detailsTitle: 'Chi tiết lỗi',
+    detailsDescription:
+      'Chi tiết lỗi backend được hiển thị bên dưới. Chúng có thể bao gồm đường dẫn cục bộ và stack frame.',
     keychainUnavailable: 'Keychain không khả dụng.',
     keychainHint: {
       translocation:

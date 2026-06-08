@@ -7,7 +7,8 @@ import { cloudRouter } from '@/modules/cloud-account/ipc/router';
 import { configRouter } from '@/modules/config/ipc/router';
 import { gatewayRouter } from '@/modules/proxy-gateway/ipc/router';
 
-import { os } from '@orpc/server';
+import { ORPCError, os } from '@orpc/server';
+import { isPlainObject, isString } from 'lodash-es';
 import { z } from 'zod';
 import {
   isProcessRunning,
@@ -22,17 +23,99 @@ const ProcessTargetInputSchema = z
   .object({ target: AntigravityAppTargetSchema.optional() })
   .optional();
 
+interface BackendErrorDetails {
+  [key: string]: unknown;
+  backendCode?: string;
+  backendStatus?: number;
+  backendName: string;
+  backendMessage: string;
+  backendStack?: string;
+  backendValue?: string;
+  requestPath: string;
+}
+
+function stringifyUnknownError(error: unknown): string {
+  if (isString(error)) {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function createBackendErrorDetails(error: unknown, requestPath: string): BackendErrorDetails {
+  const message = stringifyUnknownError(error);
+
+  if (error instanceof ORPCError) {
+    return {
+      backendCode: error.code,
+      backendStatus: error.status,
+      backendName: error.name,
+      backendMessage: message,
+      backendStack: error.stack,
+      requestPath,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      backendName: error.name,
+      backendMessage: message,
+      backendStack: error.stack,
+      requestPath,
+    };
+  }
+
+  return {
+    backendName: typeof error,
+    backendMessage: message,
+    backendValue: message,
+    requestPath,
+  };
+}
+
+function toPublicORPCError(
+  error: unknown,
+  requestPath: string,
+): ORPCError<string, Record<string, unknown>> {
+  const message = stringifyUnknownError(error);
+  const backendDetails = createBackendErrorDetails(error, requestPath);
+
+  if (error instanceof ORPCError) {
+    const existingData = isPlainObject(error.data) ? error.data : {};
+    return new ORPCError(error.code, {
+      message,
+      data: {
+        ...backendDetails,
+        ...existingData,
+      },
+    });
+  }
+
+  return new ORPCError('INTERNAL_SERVER_ERROR', {
+    message,
+    data: backendDetails,
+  });
+}
+
 // Log middleware setup
 const logMiddleware = os.middleware(async (opts: any) => {
   const { next, path, meta } = opts;
-  const requestPath = path || meta?.path || 'unknown';
+  const requestPath = JSON.stringify(path || meta?.path || 'unknown');
 
   try {
     const result = await next({});
     return result;
   } catch (err) {
-    logger.error(`[ORPC] Error in handler for ${JSON.stringify(requestPath)}:`, err);
-    throw err;
+    logger.error(`[ORPC] Error in handler for ${requestPath}:`, err);
+    throw toPublicORPCError(err, requestPath);
   }
 });
 

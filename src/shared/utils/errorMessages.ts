@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { isObjectLike } from 'lodash-es';
+import { isNumber, isObjectLike, isPlainObject, isString } from 'lodash-es';
 
 const KEYCHAIN_ERROR_CODE = 'ERR_KEYCHAIN_UNAVAILABLE';
 const KEYCHAIN_HINT_TRANSLOCATION = 'HINT_APP_TRANSLOCATION';
@@ -60,40 +60,105 @@ function resolveApplicationMessage(rawMessage: string, t: TFunction): string | n
   return null;
 }
 
-export function getLocalizedErrorMessage(error: unknown, t: TFunction): string {
-  if (error instanceof Error) {
-    const rawMessage = error.message;
-    const [code, hint] = rawMessage.split('|');
-    if (code === KEYCHAIN_ERROR_CODE) {
-      return resolveKeychainMessage(hint, t);
-    }
-    if (code === DATA_MIGRATION_ERROR_CODE) {
-      return resolveDataMigrationMessage(hint, t);
-    }
-    const applicationMessage = resolveApplicationMessage(rawMessage, t);
-    if (applicationMessage) {
-      return applicationMessage;
-    }
-    return rawMessage;
+function getObjectProperty(error: unknown, key: string): unknown {
+  if (!isObjectLike(error)) {
+    return undefined;
   }
 
-  if (isObjectLike(error)) {
-    const rawMessage = String((error as { message?: unknown }).message ?? '');
-    const [code, hint] = rawMessage.split('|');
-    if (code === KEYCHAIN_ERROR_CODE) {
-      return resolveKeychainMessage(hint, t);
-    }
-    if (code === DATA_MIGRATION_ERROR_CODE) {
-      return resolveDataMigrationMessage(hint, t);
-    }
-    const applicationMessage = resolveApplicationMessage(rawMessage, t);
-    if (applicationMessage) {
-      return applicationMessage;
-    }
-    if (rawMessage) {
-      return rawMessage;
-    }
+  return (error as Record<string, unknown>)[key];
+}
+
+function getStringProperty(error: unknown, key: string): string | undefined {
+  const value = getObjectProperty(error, key);
+  return isString(value) && value ? value : undefined;
+}
+
+function getErrorData(error: unknown): Record<string, unknown> | undefined {
+  const data = getObjectProperty(error, 'data');
+  if (!isPlainObject(data)) {
+    return undefined;
+  }
+
+  return data as Record<string, unknown>;
+}
+
+function getRawErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  const objectMessage = getStringProperty(error, 'message');
+  if (objectMessage) {
+    return objectMessage;
   }
 
   return String(error);
+}
+
+export function getLocalizedErrorMessage(error: unknown, t: TFunction): string {
+  const data = getErrorData(error);
+  const backendMessage =
+    isString(data?.backendMessage) && data.backendMessage ? data.backendMessage : '';
+  const rawMessage = getRawErrorMessage(error);
+  const messageForResolution = rawMessage || backendMessage;
+
+  if (messageForResolution) {
+    const [code, hint] = messageForResolution.split('|');
+    if (code === KEYCHAIN_ERROR_CODE) {
+      return resolveKeychainMessage(hint, t);
+    }
+    if (code === DATA_MIGRATION_ERROR_CODE) {
+      return resolveDataMigrationMessage(hint, t);
+    }
+    const applicationMessage = resolveApplicationMessage(messageForResolution, t);
+    if (applicationMessage) {
+      return applicationMessage;
+    }
+    return messageForResolution;
+  }
+
+  return String(error);
+}
+
+export function getErrorDetailsText(error: unknown): string {
+  const data = getErrorData(error);
+  const rawMessage = getRawErrorMessage(error);
+  const details: string[] = [];
+
+  if (isString(data?.requestPath) && data.requestPath) {
+    details.push(`Request path: ${data.requestPath}`);
+  }
+
+  if (isString(data?.backendCode) && data.backendCode) {
+    details.push(`Backend code: ${data.backendCode}`);
+  }
+
+  if (isNumber(data?.backendStatus)) {
+    details.push(`Backend status: ${data.backendStatus}`);
+  }
+
+  if (isString(data?.backendMessage) && data.backendMessage) {
+    details.push(`Backend message: ${data.backendMessage}`);
+  } else if (rawMessage) {
+    details.push(`Message: ${rawMessage}`);
+  }
+
+  if (isString(data?.backendStack) && data.backendStack) {
+    details.push(data.backendStack);
+  } else {
+    const stack = getStringProperty(error, 'stack');
+    if (stack) {
+      details.push(stack);
+    }
+  }
+
+  if (isString(data?.backendValue) && data.backendValue) {
+    details.push(`Backend value: ${data.backendValue}`);
+  }
+
+  if (details.length > 0) {
+    return details.join('\n\n');
+  }
+
+  return rawMessage || String(error);
 }

@@ -28,10 +28,14 @@ const tr = {
     deleteBackup: 'Yedeği Sil',
     backupCurrent: 'Mevcut Hesabı Yedekle',
     retry: 'Yeniden Dene',
+    details: 'Ayrıntılar',
     openLogs: 'Log Klasörünü Aç',
   },
   error: {
     generic: 'Beklenmeyen bir hata oluştu.',
+    detailsTitle: 'Hata ayrıntıları',
+    detailsDescription:
+      'Backend hata ayrıntıları aşağıda gösterilir. Yerel dosya yolları ve stack frame bilgileri içerebilir.',
     keychainUnavailable: 'Anahtar Zinciri (Keychain) kullanılamıyor.',
     keychainHint: {
       translocation:
@@ -46,7 +50,7 @@ const tr = {
       clearData: 'Sorun devam ederse yerel hesap verilerini temizleyip tekrar giriş yapın.',
     },
     antigravityStorageJsonNotFound:
-      "Antigravity storage.json bulunamadı. Hedef Antigravity uygulamasını açıp bir kez giriş yapın, ardından değiştirmeyi tekrar deneyin.",
+      'Antigravity storage.json bulunamadı. Hedef Antigravity uygulamasını açıp bir kez giriş yapın, ardından değiştirmeyi tekrar deneyin.',
   },
   nav: {
     accounts: 'Hesaplar',

@@ -26,9 +26,7 @@ import {
 } from './handler';
 import { CloudAccountRepo } from '@/modules/cloud-account/persistence/cloudHandler';
 import { CloudAccountSchema } from '@/modules/cloud-account/types';
-import {
-  AntigravityAppTargetSchema,
-} from '@/modules/account/types';
+import { AntigravityAppTargetSchema } from '@/modules/account/types';
 import {
   DeviceProfileSchema,
   DeviceProfilesSnapshotSchema,
@@ -84,28 +82,45 @@ function extractErrorMessage(error: unknown): string {
   return String(error);
 }
 
-export function toSyncLocalAccountORPCError(error: unknown): ORPCError<string, undefined> {
+function createSyncLocalAccountORPCError(
+  code: 'UNAUTHORIZED' | 'BAD_REQUEST' | 'INTERNAL_SERVER_ERROR',
+  error: unknown,
+): ORPCError<string, Record<string, unknown>> {
   const message = extractErrorMessage(error);
-  const normalized = message.toLowerCase();
+  return new ORPCError(code, {
+    message,
+    data: {
+      backendName: error instanceof Error ? error.name : typeof error,
+      backendMessage: message,
+      backendStack: error instanceof Error ? error.stack : undefined,
+      requestPath: '["cloud","syncLocalAccount"]',
+    },
+  });
+}
+
+export function toSyncLocalAccountORPCError(
+  error: unknown,
+): ORPCError<string, Record<string, unknown>> {
+  const message = extractErrorMessage(error);
 
   if (
-    normalized.includes('unauthenticated') ||
-    normalized.includes('unauthorized') ||
-    normalized.includes('token may be expired') ||
-    normalized.includes('re-login in antigravity ide')
+    message.includes('unauthenticated') ||
+    message.includes('unauthorized') ||
+    message.includes('token may be expired') ||
+    message.includes('re-login in antigravity ide')
   ) {
-    return new ORPCError('UNAUTHORIZED', { message });
+    return createSyncLocalAccountORPCError('UNAUTHORIZED', error);
   }
 
   if (
-    normalized.includes('no cloud account found in ide') ||
-    normalized.includes('no oauth token found in ide state') ||
-    normalized.includes('antigravity database not found')
+    message.includes('no cloud account found in ide') ||
+    message.includes('no oauth token found in ide state') ||
+    message.includes('antigravity database not found')
   ) {
-    return new ORPCError('BAD_REQUEST', { message });
+    return createSyncLocalAccountORPCError('BAD_REQUEST', error);
   }
 
-  return new ORPCError('INTERNAL_SERVER_ERROR', { message });
+  return createSyncLocalAccountORPCError('INTERNAL_SERVER_ERROR', error);
 }
 
 export const cloudRouter = os.router({

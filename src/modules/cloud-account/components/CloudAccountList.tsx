@@ -629,7 +629,7 @@ export function CloudAccountList() {
   }
 
   if (isError) {
-    return <CloudAccountLoadError onRetry={() => void refetch()} />;
+    return <CloudAccountLoadError error={error} onRetry={() => void refetch()} />;
   }
 
   const allVisibleSelected =
