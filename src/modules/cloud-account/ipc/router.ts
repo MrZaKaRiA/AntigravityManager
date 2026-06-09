@@ -219,16 +219,19 @@ export const cloudRouter = os.router({
       }
     }),
 
-  syncLocalAccount: os.output(CloudAccountSchema.nullable()).handler(async () => {
-    try {
-      const result = await CloudAccountRepo.syncFromIde();
+  syncLocalAccount: os
+    .input(z.object({ appTarget: AntigravityAppTargetSchema.optional() }).optional())
+    .output(CloudAccountSchema.nullable())
+    .handler(async ({ input }) => {
+      try {
+        const result = await CloudAccountRepo.syncFromIde(input?.appTarget);
 
-      return result;
-    } catch (error: any) {
-      logger.error('[ORPC] syncLocalAccount error:', error.message, error.stack);
-      throw toSyncLocalAccountORPCError(error);
-    }
-  }),
+        return result;
+      } catch (error: any) {
+        logger.error('[ORPC] syncLocalAccount error:', error.message, error.stack);
+        throw toSyncLocalAccountORPCError(error);
+      }
+    }),
 
   getSwitchStatus: os.output(switchStatusSnapshotSchema).handler(async () => {
     return {

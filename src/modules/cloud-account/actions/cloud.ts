@@ -36,8 +36,8 @@ export function forcePollCloudMonitor() {
   return ipc.client.cloud.forcePollCloudMonitor();
 }
 
-export function syncLocalAccount() {
-  return ipc.client.cloud.syncLocalAccount();
+export function syncLocalAccount(input?: { appTarget?: AntigravityAppTarget }) {
+  return ipc.client.cloud.syncLocalAccount(input);
 }
 
 export interface OAuthClientDescriptor {

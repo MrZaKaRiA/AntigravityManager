@@ -32,6 +32,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -52,6 +53,7 @@ import {
   type GridLayout,
 } from '@/modules/cloud-account/components/CloudAccountList.constants';
 import type { OAuthClientDescriptor } from '@/modules/cloud-account/actions/cloud';
+import type { AntigravityAppTarget } from '@/modules/account/types';
 import type { AccountTierOption } from '@/modules/cloud-account/utils/account-tier-filter';
 import type { AccountSortKey } from '@/modules/cloud-account/utils/quota-display';
 
@@ -90,7 +92,7 @@ interface CloudAccountToolbarProps {
   onToggleAutoSwitch: (checked: boolean) => void;
   onToggleSelectAllAccounts: () => void;
   onForcePoll: () => void;
-  onSyncLocal: () => void;
+  onSyncLocal: (appTarget: AntigravityAppTarget) => void;
   onExportDialogOpenChange: (open: boolean) => void;
   onImportDialogOpenChange: (open: boolean) => void;
   onAddDialogOpenChange: (open: boolean) => void;
@@ -202,16 +204,38 @@ export function CloudAccountToolbar({
         <RefreshCcw className={`h-4 w-4 ${isForcePollPending ? 'animate-spin' : ''}`} />
       </Button>
 
-      <Button
-        variant="outline"
-        onClick={onSyncLocal}
-        disabled={isSyncPending}
-        title={t('cloud.syncFromIde')}
-        className="cursor-pointer"
-      >
-        <Download className={`mr-2 h-4 w-4 ${isSyncPending ? 'animate-bounce' : ''}`} />
-        {t('cloud.syncFromIde')}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            disabled={isSyncPending}
+            title={t('cloud.syncFromIde')}
+            className="cursor-pointer"
+          >
+            <Download className={`mr-2 h-4 w-4 ${isSyncPending ? 'animate-bounce' : ''}`} />
+            {t('cloud.syncFromIde')}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56" side="bottom" sideOffset={8}>
+          <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[10px] tracking-wider uppercase">
+            {t('cloud.syncSource', 'Sync Source')}
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            disabled={isSyncPending}
+            onClick={() => onSyncLocal('classic')}
+          >
+            {t('cloud.syncFromAntigravity', 'Antigravity')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            disabled={isSyncPending}
+            onClick={() => onSyncLocal('ide')}
+          >
+            {t('cloud.syncFromAntigravityIde', 'Antigravity IDE')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <Dialog open={isExportDialogOpen} onOpenChange={onExportDialogOpenChange}>
         <DialogTrigger asChild>

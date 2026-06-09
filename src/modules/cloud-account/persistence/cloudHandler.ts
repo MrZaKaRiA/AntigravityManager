@@ -1529,9 +1529,9 @@ export class CloudAccountRepo {
     }
   }
 
-  static async syncFromIde(): Promise<CloudAccount | null> {
+  static async syncFromIde(appTarget?: AntigravityAppTarget): Promise<CloudAccount | null> {
     // Try all possible database paths
-    const dbPaths = getAntigravityDbPaths();
+    const dbPaths = getAntigravityDbPaths(appTarget);
     logger.info(`SyncLocal: Checking database paths: ${JSON.stringify(dbPaths)}`);
 
     const dbPath =

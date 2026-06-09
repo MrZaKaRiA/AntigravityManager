@@ -10,6 +10,7 @@ import {
   type OAuthClientDescriptor,
 } from '@/modules/cloud-account/actions/cloud';
 import { CloudAccount } from '@/modules/cloud-account/types';
+import type { AntigravityAppTarget } from '@/modules/account/types';
 
 export const QUERY_KEYS = {
   cloudAccounts: ['cloudAccounts'],
@@ -133,7 +134,7 @@ import { syncLocalAccount } from '@/modules/cloud-account/actions/cloud';
 
 export function useSyncLocalAccount() {
   const queryClient = useQueryClient();
-  return useMutation<CloudAccount | null, Error, void>({
+  return useMutation<CloudAccount | null, Error, { appTarget?: AntigravityAppTarget } | undefined>({
     mutationFn: syncLocalAccount,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.cloudAccounts });

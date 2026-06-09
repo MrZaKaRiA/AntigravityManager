@@ -10,6 +10,7 @@ let mockData: Record<string, string>;
 let busyOnFirstGet = false;
 let getCallCount = 0;
 let runCalls: Array<{ sql: string; args: unknown[] }>;
+let getAntigravityDbPathsCalls: unknown[];
 interface MockOrm {
   select: () => {
     from: () => {
@@ -59,7 +60,10 @@ vi.mock('@/shared/persistence/database/dbConnection', () => ({
 }));
 
 vi.mock('../../shared/platform/paths', () => ({
-  getAntigravityDbPaths: () => ['mock-db'],
+  getAntigravityDbPaths: (target?: unknown) => {
+    getAntigravityDbPathsCalls.push(target);
+    return ['mock-db'];
+  },
   getCloudAccountsDbPath: () => 'mock-cloud-db',
   refreshAntigravityProcessCache: () => Promise.resolve(),
 }));
@@ -76,6 +80,7 @@ vi.mock('../../shared/logging/logger', () => ({
 vi.mock('@/modules/cloud-account/services/GoogleAPIService', () => ({
   GoogleAPIService: {
     getUserInfo: vi.fn(),
+    refreshAccessToken: vi.fn(),
   },
 }));
 
@@ -89,6 +94,7 @@ describe('CloudAccountRepo.syncFromIde', () => {
     busyOnFirstGet = false;
     getCallCount = 0;
     runCalls = [];
+    getAntigravityDbPathsCalls = [];
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     mockOrm = {
       select: () => ({
@@ -147,6 +153,28 @@ describe('CloudAccountRepo.syncFromIde', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('should resolve IDE database paths from the selected app target', async () => {
+    const accessToken = 'access-ide-target';
+    const refreshToken = 'refresh-ide-target';
+    const oldB64 = Buffer.from(
+      ProtobufUtils.createOAuthTokenInfo(accessToken, refreshToken, 1700000000),
+    ).toString('base64');
+
+    mockData['jetskiStateSync.agentManagerInitState'] = oldB64;
+
+    const { GoogleAPIService } = await import('@/modules/cloud-account/services/GoogleAPIService');
+    vi.mocked(GoogleAPIService.getUserInfo).mockResolvedValue(
+      createMockUserInfo('ide-target@example.com', 'IDE Target User'),
+    );
+
+    vi.spyOn(CloudAccountRepo, 'getAccounts').mockResolvedValue([]);
+    vi.spyOn(CloudAccountRepo, 'addAccount').mockResolvedValue();
+
+    await CloudAccountRepo.syncFromIde('ide');
+
+    expect(getAntigravityDbPathsCalls).toEqual(['ide']);
   });
 
   it('should prefer unified oauth token when present', async () => {
@@ -441,6 +469,55 @@ describe('CloudAccountRepo.syncFromIde', () => {
 
     expect(GoogleAPIService.getUserInfo).toHaveBeenCalledWith(accessToken);
     expect(account?.email).toBe('retry@example.com');
+  });
+
+  it('should refresh the IDE token when user info rejects the stored access token', async () => {
+    const staleAccessToken = 'stale-access';
+    const refreshToken = 'refresh-for-resync';
+    const refreshedAccessToken = 'fresh-access';
+    const oldB64 = Buffer.from(
+      ProtobufUtils.createOAuthTokenInfo(staleAccessToken, refreshToken, 1700000000),
+    ).toString('base64');
+
+    mockData['jetskiStateSync.agentManagerInitState'] = oldB64;
+
+    const { GoogleAPIService } = await import('@/modules/cloud-account/services/GoogleAPIService');
+    vi.mocked(GoogleAPIService.getUserInfo)
+      .mockRejectedValueOnce(
+        new Error(
+          'Failed to fetch user info: {"error":{"code":401,"status":"UNAUTHENTICATED"}}',
+        ),
+      )
+      .mockResolvedValueOnce(createMockUserInfo('refreshed@example.com', 'Refreshed User'));
+    vi.mocked(GoogleAPIService.refreshAccessToken).mockResolvedValue({
+      access_token: refreshedAccessToken,
+      refresh_token: 'rotated-refresh',
+      expires_in: 3600,
+      token_type: 'Bearer',
+      id_token: 'refreshed-id-token',
+    });
+
+    vi.spyOn(CloudAccountRepo, 'getAccounts').mockResolvedValue([]);
+    const addAccountSpy = vi.spyOn(CloudAccountRepo, 'addAccount').mockResolvedValue();
+
+    const account = await CloudAccountRepo.syncFromIde('ide');
+
+    expect(GoogleAPIService.refreshAccessToken).toHaveBeenCalledWith(refreshToken);
+    expect(GoogleAPIService.getUserInfo).toHaveBeenNthCalledWith(1, staleAccessToken);
+    expect(GoogleAPIService.getUserInfo).toHaveBeenNthCalledWith(2, refreshedAccessToken);
+    expect(account?.email).toBe('refreshed@example.com');
+    expect(account?.token.access_token).toBe(refreshedAccessToken);
+    expect(account?.token.refresh_token).toBe('rotated-refresh');
+    expect(account?.token.id_token).toBe('refreshed-id-token');
+    expect(addAccountSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: expect.objectContaining({
+          access_token: refreshedAccessToken,
+          refresh_token: 'rotated-refresh',
+          id_token: 'refreshed-id-token',
+        }),
+      }),
+    );
   });
 
   it('should inject both formats when version detection fails', async () => {

@@ -311,30 +311,33 @@ export function CloudAccountList() {
     });
   };
 
-  const handleSyncLocal = () => {
-    syncMutation.mutate(undefined, {
-      onSuccess: (acc: CloudAccount | null) => {
-        if (acc) {
-          toast({
-            title: t('cloud.toast.syncSuccess.title'),
-            description: t('cloud.toast.syncSuccess.description', { email: acc.email }),
-          });
-        } else {
+  const handleSyncLocal = (appTarget: AntigravityAppTarget) => {
+    syncMutation.mutate(
+      { appTarget },
+      {
+        onSuccess: (acc: CloudAccount | null) => {
+          if (acc) {
+            toast({
+              title: t('cloud.toast.syncSuccess.title'),
+              description: t('cloud.toast.syncSuccess.description', { email: acc.email }),
+            });
+          } else {
+            toast({
+              title: t('cloud.toast.syncFailed.title'),
+              description: t('cloud.toast.syncFailed.description'),
+              variant: 'destructive',
+            });
+          }
+        },
+        onError: (err) => {
           toast({
             title: t('cloud.toast.syncFailed.title'),
-            description: t('cloud.toast.syncFailed.description'),
+            description: getLocalizedErrorMessage(err, t),
             variant: 'destructive',
           });
-        }
+        },
       },
-      onError: (err) => {
-        toast({
-          title: t('cloud.toast.syncFailed.title'),
-          description: getLocalizedErrorMessage(err, t),
-          variant: 'destructive',
-        });
-      },
-    });
+    );
   };
 
   const openGoogleAuthSignIn = async () => {
