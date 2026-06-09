@@ -2,6 +2,30 @@
 
 # Changelog
 
+## [0.16.1](https://github.com/Draculabo/AntigravityManager/compare/v0.16.0...v0.16.1) (2026-06-09)
+
+### 🐛 Bug Fixes
+
+* **ci:** allow flake update workflow to create PRs ([b30a8c7](https://github.com/Draculabo/AntigravityManager/commit/b30a8c7294bb3bf2a529136ecf75763a6cdd3bb9))
+* **cloud-account:** prefer target active id for credential-store switches ([4b68a17](https://github.com/Draculabo/AntigravityManager/commit/4b68a17b53ab380c9f53c114f8c6386d43082a35))
+* resolve IDE cloud sync token discovery and refresh ([4f05ccf](https://github.com/Draculabo/AntigravityManager/commit/4f05ccfb12819a523655977fe37c216d1c92fd4b))
+
+### ⚡ Performance Improvements
+
+* speed up cloud account switching on Windows ([010ebf8](https://github.com/Draculabo/AntigravityManager/commit/010ebf89141769cc6fc6e604e8bbf652e2982f05))
+
+### ✅ Tests
+
+* **renderer:** verify code inspector is dev-only ([93969c8](https://github.com/Draculabo/AntigravityManager/commit/93969c81354db5596e9055d3f2d663bdad7289d9))
+
+### 👷 Build System
+
+* tighten Electron package contents ([365d9a4](https://github.com/Draculabo/AntigravityManager/commit/365d9a42f863f60136b44fe3aead4f73aefa1dd5))
+
+### 🔧 Continuous Integration
+
+* add Windows x64 package size audit ([34d2570](https://github.com/Draculabo/AntigravityManager/commit/34d25704b251c04b66d68873f0170c81c05b55ef))
+
 ## [0.16.0](https://github.com/Draculabo/AntigravityManager/compare/v0.15.0...v0.16.0) (2026-06-08)
 
 ### ✨ Features
