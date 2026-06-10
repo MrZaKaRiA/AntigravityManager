@@ -6,7 +6,7 @@ import { logger } from '@/shared/logging/logger';
 import { classifyAccountStatusFromError } from '@/modules/cloud-account/utils/account-status';
 import type { CloudAccount } from '@/modules/cloud-account/types';
 
-type CloudMonitorLanguage = 'en' | 'zh-CN' | 'ru' | 'vi';
+type CloudMonitorLanguage = 'en' | 'zh-CN' | 'ru' | 'vi' | 'fr';
 
 const CLOUD_MONITOR_NOTIFICATION_TEXT: Record<
   CloudMonitorLanguage,
@@ -31,6 +31,10 @@ const CLOUD_MONITOR_NOTIFICATION_TEXT: Record<
     lowQuotaTitle: 'Cảnh báo quota thấp',
     lowQuotaBody: (email, models) => `${email}: ${models} đang có quota thấp`,
   },
+  fr: {
+    lowQuotaTitle: 'Alerte de quota faible',
+    lowQuotaBody: (email, models) => `${email} : quota faible pour ${models}`,
+  },
 };
 
 function getCloudMonitorLanguage(language: string | null | undefined): CloudMonitorLanguage {
@@ -43,6 +47,9 @@ function getCloudMonitorLanguage(language: string | null | undefined): CloudMoni
   }
   if (normalizedLanguage.startsWith('vi')) {
     return 'vi';
+  }
+  if (normalizedLanguage.startsWith('fr')) {
+    return 'fr';
   }
   return 'en';
 }

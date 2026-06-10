@@ -1,6 +1,6 @@
 import path from 'path';
 
-export type InstallNoticeLanguage = 'zh-CN' | 'en' | 'ru' | 'vi';
+export type InstallNoticeLanguage = 'zh-CN' | 'en' | 'ru' | 'vi' | 'fr';
 
 const installNoticeText: Record<
   InstallNoticeLanguage,
@@ -39,6 +39,13 @@ const installNoticeText: Record<
     detailPrefix: 'Thư mục cài đặt: ',
     buttons: ['Mở thư mục cài đặt', 'Đã hiểu'],
   },
+  fr: {
+    title: 'Lancez depuis le menu Demarrer',
+    message:
+      'Nous avons detecte que l app s execute depuis un emplacement non installe. Pour garantir le fonctionnement des mises a jour automatiques, lancez-la depuis le menu Demarrer ou le raccourci du bureau. Si aucun raccourci n existe, relancez l installateur.',
+    detailPrefix: 'Emplacement d installation : ',
+    buttons: ['Ouvrir le dossier d installation', 'OK'],
+  },
 };
 
 export function resolveInstallNoticeLanguage({
@@ -64,6 +71,10 @@ export function resolveInstallNoticeLanguage({
 
   if (normalized.startsWith('vi')) {
     return 'vi';
+  }
+
+  if (normalized.startsWith('fr')) {
+    return 'fr';
   }
 
   return 'en';

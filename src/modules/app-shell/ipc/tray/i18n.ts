@@ -58,6 +58,18 @@ const vi: TrayTexts = {
   forbidden: 'Tài khoản bị cấm',
 };
 
+const fr: TrayTexts = {
+  current: 'Actuel',
+  quota: 'Quota',
+  switch_next: 'Basculer vers le compte suivant',
+  refresh_current: 'Actualiser le quota actuel',
+  show_window: 'Afficher la fenetre principale',
+  quit: 'Quitter l application',
+  no_account: 'Aucun compte',
+  unknown_quota: 'Inconnu',
+  forbidden: 'Compte bloque',
+};
+
 export function getTrayTexts(lang: string = 'en'): TrayTexts {
   if (lang.startsWith('zh')) {
     return zh;
@@ -67,6 +79,9 @@ export function getTrayTexts(lang: string = 'en'): TrayTexts {
   }
   if (lang.startsWith('vi')) {
     return vi;
+  }
+  if (lang.startsWith('fr')) {
+    return fr;
   }
   return en;
 }

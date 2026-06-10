@@ -5,7 +5,8 @@ import vi from './vi';
 import tr from './tr';
 import en from './en';
 import zhCn from './zh-CN';
-import ru from "./ru";
+import ru from './ru';
+import fr from './fr';
 
 i18n
   .use(LanguageDetector)
@@ -17,7 +18,7 @@ i18n
       caches: ['localStorage'],
       lookupLocalStorage: 'lang',
     },
-    supportedLngs: ['en', 'zh-CN', 'ru', 'vi', 'tr'],
+    supportedLngs: ['en', 'zh-CN', 'ru', 'vi', 'tr', 'fr'],
     load: 'currentOnly', // Only load the exact language code, not variants
     resources: {
       en: {
@@ -34,6 +35,9 @@ i18n
       },
       ru: {
         translation: ru,
+      },
+      fr: {
+        translation: fr,
       },
     },
   });
