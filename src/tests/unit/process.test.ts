@@ -99,12 +99,15 @@ import {
   getAntigravityExecutablePath,
   isTargetAntigravityProcessCandidate,
 } from '@/shared/platform/paths';
+import { logger } from '@/shared/logging/logger';
 
 describe('Process Handler', () => {
   const mockFindProcess = findProcess as unknown as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindProcess.mockReset();
+    mockFindProcess.mockResolvedValue([]);
     childProcessMock.execSync.mockImplementation(() => {
       throw new Error('process command unavailable');
     });
@@ -225,6 +228,7 @@ describe('Process Handler', () => {
 
       const result = await isProcessRunning();
       expect(result).toBe(true);
+      expect(mockFindProcess).toHaveBeenCalledWith('name', 'Antigravity', false);
     });
 
     it('should pass the quoted executable path from command line to target classifier', async () => {
@@ -289,6 +293,58 @@ describe('Process Handler', () => {
 
       const result = await isProcessRunning();
       expect(result).toBe(false);
+    });
+
+    it('should diagnose find-process failures and fall back to Windows process queries', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      Object.defineProperty(process, 'pid', { value: 1000, configurable: true });
+
+      childProcessMock.execSync.mockImplementation((command: string) => {
+        if (command.startsWith('tasklist')) {
+          throw new Error('tasklist unavailable');
+        }
+        if (command.startsWith('wmic')) {
+          return `
+CommandLine="C:\\Program Files\\Antigravity\\Antigravity.exe"
+ExecutablePath=C:\\Program Files\\Antigravity\\Antigravity.exe
+ProcessId=12345
+`;
+        }
+        return '';
+      });
+      childProcessMock.exec.mockImplementation(
+        (
+          _command: string,
+          _options: unknown,
+          callback: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          callback(null, '', '');
+          return { kill: vi.fn() };
+        },
+      );
+      mockFindProcess.mockRejectedValue(
+        new Error(
+          "Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance -className win32_process | select Name,ProcessId,ParentProcessId,CommandLine,ExecutablePath' terminated with code: 1",
+        ),
+      );
+
+      const result = await isProcessRunning('classic');
+
+      expect(result).toBe(true);
+      expect(mockFindProcess).toHaveBeenCalledWith('name', 'Antigravity', false);
+      expect(childProcessMock.exec).toHaveBeenCalledWith(
+        expect.stringContaining('-NoProfile'),
+        expect.objectContaining({ windowsHide: true }),
+        expect.any(Function),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        'find-process Windows scan failed; using Windows image-name fallback',
+        expect.objectContaining({
+          noProfileCimProbe: 'ok',
+          probableCause: expect.stringContaining('PowerShell profile'),
+        }),
+      );
+      expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('should exclude processes with --type= argument', async () => {
@@ -492,10 +548,7 @@ describe('Process Handler', () => {
     it('should fall back to executable launch when Classic URI launch does not start a process', async () => {
       Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
       childProcessMock.exec.mockImplementation(
-        (
-          command: string,
-          callback: (err: Error | null, stdout: any, stderr?: any) => void,
-        ) => {
+        (command: string, callback: (err: Error | null, stdout: any, stderr?: any) => void) => {
           callback(null, { stdout: '', stderr: '' });
           return { unref: vi.fn(), kill: vi.fn() };
         },
@@ -521,6 +574,51 @@ describe('Process Handler', () => {
         }),
       );
     }, 10000);
+
+    it('should warn and fall back to executable launch when Linux URI protocol is unsupported', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      let launched = false;
+      const unsupportedProtocolError = new Error(
+        'Command failed: xdg-open "antigravity://oauth-success"',
+      );
+      childProcessMock.exec.mockImplementation(
+        (command: string, callback: (err: Error | null, stdout: any, stderr?: any) => void) => {
+          callback(unsupportedProtocolError, '', 'gio: antigravity://oauth-success unsupported');
+          return { unref: vi.fn(), kill: vi.fn() };
+        },
+      );
+      childProcessMock.spawn.mockImplementation(() => {
+        launched = true;
+        return { unref: vi.fn() };
+      });
+      mockFindProcess.mockImplementation(async (_type, searchName) => {
+        if (launched && searchName === 'antigravity') {
+          return [{ pid: 12345, name: 'antigravity', cmd: '/usr/bin/antigravity' }];
+        }
+
+        return [];
+      });
+      vi.mocked(getAntigravityExecutablePath).mockReturnValue('/usr/bin/antigravity');
+
+      await startAntigravity(undefined, true);
+
+      expect(childProcessMock.exec).toHaveBeenCalledWith(
+        'xdg-open "antigravity://oauth-success"',
+        expect.any(Function),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Failed to open URI: Command failed: xdg-open "antigravity://oauth-success"',
+      );
+      expect(logger.error).not.toHaveBeenCalledWith('Failed to open URI', expect.any(Error));
+      expect(childProcessMock.spawn).toHaveBeenCalledWith(
+        '/usr/bin/antigravity',
+        ['--disable-gpu', '--disable-gpu-compositing'],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+        }),
+      );
+    });
 
     it('should open the configured macOS app path instead of only using the app name', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });

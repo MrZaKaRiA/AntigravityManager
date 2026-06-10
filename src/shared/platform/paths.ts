@@ -460,11 +460,13 @@ function queryWindowsTargetProcesses(
   target?: AntigravityAppTarget | null,
 ): RunningAntigravityProcess[] | null {
   const processMap = new Map<number, RunningAntigravityProcess>();
+  let sawQueryFailure = false;
 
   for (const imageName of getWindowsProcessImageNames(target)) {
     const processes = queryWindowsProcessesByImageName(imageName);
     if (!processes) {
-      return null;
+      sawQueryFailure = true;
+      continue;
     }
 
     for (const processItem of processes) {
@@ -472,6 +474,10 @@ function queryWindowsTargetProcesses(
         processMap.set(processItem.pid, processItem);
       }
     }
+  }
+
+  if (sawQueryFailure && processMap.size === 0) {
+    return null;
   }
 
   return Array.from(processMap.values());

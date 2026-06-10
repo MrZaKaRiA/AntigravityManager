@@ -2,7 +2,7 @@ import { exec, execSync, spawn } from 'child_process';
 import path from 'path';
 import { promisify } from 'util';
 import findProcess, { ProcessInfo } from 'find-process';
-import { isNumber } from 'lodash-es';
+import { isNumber, isString } from 'lodash-es';
 import {
   type AntigravityProcessCandidate,
   getAntigravityExecutablePath,
@@ -19,12 +19,18 @@ import {
   isSafeWindowsImageName,
   isWindowsImageRunning,
   killWindowsImageTree,
+  queryWindowsProcessesByImageName,
 } from '@/shared/platform/windowsProcess';
 
 const execAsync = promisify(exec);
 const PROCESS_STARTUP_TIMEOUT_MS = 6000;
 const PROCESS_STARTUP_POLL_INTERVAL_MS = 200;
+const WINDOWS_FIND_PROCESS_DIAGNOSTIC_TIMEOUT_MS = 3000;
+const WINDOWS_FIND_PROCESS_DIAGNOSTIC_INTERVAL_MS = 10 * 60 * 1000;
+const WINDOWS_CIM_PROBE_COMMAND =
+  "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance -ClassName Win32_Process -Property Name,ProcessId,ParentProcessId,CommandLine,ExecutablePath | Select-Object -First 1 | Out-Null";
 const LINUX_GPU_SAFE_LAUNCH_ARGS = ['--disable-gpu', '--disable-gpu-compositing'] as const;
+let lastWindowsFindProcessDiagnosticAt = 0;
 
 function isPgrepNoMatchError(error: unknown): boolean {
   if (!(error instanceof Error)) {
@@ -100,12 +106,102 @@ function killWindowsTargetImages(target?: AntigravityAppTarget | null): boolean 
   return killedAny;
 }
 
+function findWindowsAntigravityProcesses(target?: AntigravityAppTarget | null): ProcessInfo[] {
+  const processMap = new Map<number, ProcessInfo>();
+
+  for (const imageName of getWindowsTargetImageNames(target)) {
+    const processes = queryWindowsProcessesByImageName(imageName);
+    if (!processes) {
+      continue;
+    }
+
+    for (const processItem of processes) {
+      processMap.set(processItem.pid, {
+        pid: processItem.pid,
+        ppid: 0,
+        name: processItem.name,
+        bin: processItem.executablePath,
+        cmd: processItem.commandLine,
+      });
+    }
+  }
+
+  return Array.from(processMap.values());
+}
+
+function truncateDiagnosticValue(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').slice(0, 1000);
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function getErrorOutput(error: unknown, key: 'stdout' | 'stderr'): string {
+  const output = (error as { [K in typeof key]?: unknown })?.[key];
+  return isString(output) ? truncateDiagnosticValue(output) : '';
+}
+
+async function getWindowsFindProcessDiagnostic(error: unknown): Promise<Record<string, string>> {
+  const diagnostic = {
+    findProcessError: truncateDiagnosticValue(getErrorMessage(error)),
+  };
+
+  try {
+    await execAsync(
+      `powershell.exe -NoProfile -NonInteractive -Command "${WINDOWS_CIM_PROBE_COMMAND}"`,
+      {
+        timeout: WINDOWS_FIND_PROCESS_DIAGNOSTIC_TIMEOUT_MS,
+        windowsHide: true,
+      },
+    );
+
+    return {
+      ...diagnostic,
+      noProfileCimProbe: 'ok',
+      probableCause:
+        'PowerShell profile or interactive shell startup is likely interfering with find-process',
+    };
+  } catch (probeError) {
+    return {
+      ...diagnostic,
+      noProfileCimProbe: 'failed',
+      noProfileError: truncateDiagnosticValue(getErrorMessage(probeError)),
+      noProfileStdout: getErrorOutput(probeError, 'stdout'),
+      noProfileStderr: getErrorOutput(probeError, 'stderr'),
+      probableCause: 'WMI/CIM, permissions, or endpoint policy may be blocking Win32_Process',
+    };
+  }
+}
+
+async function reportWindowsFindProcessFailure(error: unknown): Promise<void> {
+  const now = Date.now();
+  if (now - lastWindowsFindProcessDiagnosticAt < WINDOWS_FIND_PROCESS_DIAGNOSTIC_INTERVAL_MS) {
+    logger.warn('find-process Windows scan failed; using Windows image-name fallback', {
+      findProcessError: truncateDiagnosticValue(getErrorMessage(error)),
+      diagnosticSkipped: 'rate_limited',
+    });
+    return;
+  }
+
+  lastWindowsFindProcessDiagnosticAt = now;
+  logger.warn(
+    'find-process Windows scan failed; using Windows image-name fallback',
+    await getWindowsFindProcessDiagnostic(error),
+  );
+}
+
 async function findAntigravityProcesses(
   target?: AntigravityAppTarget | null,
   includeAllProcesses = false,
 ): Promise<ProcessInfo[]> {
   const allMatches: ProcessInfo[] = [];
   let sawNoMatch = false;
+  let windowsFindProcessError: unknown = null;
 
   for (const searchName of getProcessSearchNames(target, includeAllProcesses)) {
     try {
@@ -116,8 +212,17 @@ async function findAntigravityProcesses(
         sawNoMatch = true;
         continue;
       }
+      if (process.platform === 'win32') {
+        windowsFindProcessError = error;
+        break;
+      }
       throw error;
     }
+  }
+
+  if (windowsFindProcessError) {
+    await reportWindowsFindProcessFailure(windowsFindProcessError);
+    return findWindowsAntigravityProcesses(target);
   }
 
   const processMap = new Map<number, ProcessInfo>();
@@ -404,7 +509,7 @@ async function openUri(uri: string): Promise<boolean> {
     }
     return true;
   } catch (error) {
-    logger.error('Failed to open URI', error);
+    logger.warn(`Failed to open URI: ${getErrorMessage(error)}`);
     return false;
   }
 }

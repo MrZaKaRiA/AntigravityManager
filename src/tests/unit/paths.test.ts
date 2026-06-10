@@ -15,11 +15,11 @@ const p = {
   },
   get dirname() {
     return process.platform === 'win32' ? path.win32.dirname : path.posix.dirname;
-  }
+  },
 };
 
 const childProcessMock = vi.hoisted(() => ({
-  execSync: vi.fn(() => ''),
+  execSync: vi.fn<(command: string, ...args: unknown[]) => string>(() => ''),
 }));
 
 const findProcessMock = vi.hoisted(() =>
@@ -114,6 +114,24 @@ describe('Path Utilities', () => {
       expect(execPath).toBe('/Applications/Antigravity.app/Contents/MacOS/Antigravity');
     }
     // Windows path depends on env vars, harder to test strictly without mocking
+  });
+
+  it('should skip non-writable derived portable user-data paths on Linux', async () => {
+    vi.resetModules();
+    setPlatform('linux');
+    vi.spyOn(os, 'homedir').mockReturnValue('/home/alice');
+    vi.spyOn(fs, 'existsSync').mockImplementation((candidatePath) => {
+      return String(candidatePath) === '/usr/bin/antigravity';
+    });
+
+    const paths = await import('../../shared/platform/paths');
+
+    expect(paths.getAntigravityDbPath()).toBe(
+      '/home/alice/.config/Antigravity/User/globalStorage/state.vscdb',
+    );
+    expect(paths.getAntigravityStoragePath()).toBe(
+      '/home/alice/.config/Antigravity/User/globalStorage/storage.json',
+    );
   });
 
   it('should prioritize --user-data-dir from the running target process', async () => {
@@ -591,23 +609,29 @@ describe('Path Utilities', () => {
     setPlatform('win32');
 
     const executablePath = 'D:\\Apps\\Antigravity IDE\\Antigravity IDE.exe';
-    const runningProcess = {
-      pid: 456,
-      ppid: 1,
-      name: 'Antigravity IDE.exe',
-      bin: executablePath,
-      cmd: `"${executablePath}"`,
-    };
 
     vi.spyOn(fs, 'existsSync').mockImplementation((candidatePath) => {
       return String(candidatePath) === executablePath;
     });
-    findProcessMock.mockResolvedValue([runningProcess]);
+    findProcessMock.mockResolvedValue([
+      {
+        pid: 456,
+        ppid: 1,
+        name: 'Antigravity IDE.exe',
+        bin: executablePath,
+        cmd: `"${executablePath}"`,
+      },
+    ]);
 
     const paths = await import('../../shared/platform/paths');
     await paths.refreshAntigravityProcessCache('ide');
 
     expect(paths.getAntigravityExecutablePath('ide')).toBe(executablePath);
+    expect(findProcessMock).toHaveBeenCalledWith(
+      'name',
+      'Antigravity IDE',
+      expect.objectContaining({ strict: false }),
+    );
   });
 
   it('should avoid all-process scans during normal process cache refresh', async () => {
@@ -657,6 +681,36 @@ ProcessId=12345
         '--user-data-dir',
         'D:\\Profiles\\AG',
       ],
+    ]);
+  });
+
+  it('should fall back to find-process when Windows process cache queries fail', async () => {
+    vi.resetModules();
+    setPlatform('win32');
+
+    childProcessMock.execSync.mockImplementation(() => {
+      throw new Error('Windows process command unavailable');
+    });
+    findProcessMock.mockResolvedValue([
+      {
+        pid: 456,
+        ppid: 1,
+        name: 'Antigravity.exe',
+        bin: 'C:\\Program Files\\Antigravity\\Antigravity.exe',
+        cmd: '"C:\\Program Files\\Antigravity\\Antigravity.exe"',
+      },
+    ]);
+
+    const paths = await import('../../shared/platform/paths');
+    await paths.refreshAntigravityProcessCache('classic');
+
+    expect(findProcessMock).toHaveBeenCalledWith(
+      'name',
+      'Antigravity',
+      expect.objectContaining({ strict: false }),
+    );
+    expect(paths.getAntigravityArgsFromRunningProcess('classic')).toEqual([
+      ['C:\\Program Files\\Antigravity\\Antigravity.exe'],
     ]);
   });
 
