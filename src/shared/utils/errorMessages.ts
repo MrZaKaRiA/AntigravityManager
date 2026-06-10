@@ -9,6 +9,8 @@ const DATA_MIGRATION_ERROR_CODE = 'ERR_DATA_MIGRATION_FAILED';
 const DATA_MIGRATION_HINT_RELOGIN = 'HINT_RELOGIN';
 const DATA_MIGRATION_HINT_CLEAR_DATA = 'HINT_CLEAR_DATA';
 const ANTIGRAVITY_STORAGE_JSON_NOT_FOUND = 'storage_json_not_found';
+const ENTERPRISE_PROJECT_ID_SWITCH_FAILURE = 'enterprise oauth requires a valid project_id';
+const MISSING_ENTERPRISE_PROJECT_ID_SWITCH_FAILURE = 'missing enterprise project_id';
 
 const KEYCHAIN_HINT_I18N_MAP: Record<string, string> = {
   [KEYCHAIN_HINT_TRANSLOCATION]: 'error.keychainHint.translocation',
@@ -54,6 +56,17 @@ function resolveApplicationMessage(rawMessage: string, t: TFunction): string | n
     return t('error.antigravityStorageJsonNotFound', {
       defaultValue:
         'Antigravity storage.json was not found. Open the target Antigravity app and sign in once, then try switching again.',
+    });
+  }
+
+  const normalizedMessage = rawMessage.toLowerCase();
+  if (
+    normalizedMessage.includes(ENTERPRISE_PROJECT_ID_SWITCH_FAILURE) ||
+    normalizedMessage.includes(MISSING_ENTERPRISE_PROJECT_ID_SWITCH_FAILURE)
+  ) {
+    return t('error.antigravityProjectIdMissing', {
+      defaultValue:
+        'This account is missing an Antigravity project ID. This may happen if the account has not signed in to the Antigravity app before. Please sign in once in the Antigravity app, then return to this tool and try switching again.',
     });
   }
 

@@ -51,6 +51,8 @@ const vi = {
     },
     antigravityStorageJsonNotFound:
       'Không tìm thấy storage.json của Antigravity. Hãy mở ứng dụng Antigravity mục tiêu và đăng nhập một lần, rồi thử chuyển lại.',
+    antigravityProjectIdMissing:
+      'Tài khoản này thiếu Antigravity project ID. Điều này có thể xảy ra nếu tài khoản chưa từng đăng nhập vào ứng dụng Antigravity. Hãy đăng nhập một lần trong ứng dụng Antigravity, rồi quay lại công cụ này và thử chuyển lại.',
   },
   nav: {
     accounts: 'Tài khoản',

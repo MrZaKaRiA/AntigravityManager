@@ -51,6 +51,8 @@ const tr = {
     },
     antigravityStorageJsonNotFound:
       'Antigravity storage.json bulunamadı. Hedef Antigravity uygulamasını açıp bir kez giriş yapın, ardından değiştirmeyi tekrar deneyin.',
+    antigravityProjectIdMissing:
+      'Bu hesapta Antigravity proje kimliği eksik. Bu durum, hesap daha önce Antigravity uygulamasında oturum açmadıysa oluşabilir. Lütfen Antigravity uygulamasında bir kez oturum açın, ardından bu araca dönüp değiştirmeyi tekrar deneyin.',
   },
   nav: {
     accounts: 'Hesaplar',

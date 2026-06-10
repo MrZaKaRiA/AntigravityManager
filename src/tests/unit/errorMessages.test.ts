@@ -8,11 +8,14 @@ import {
 
 const STORAGE_NOT_FOUND_MESSAGE =
   'Antigravity storage.json was not found. Open the target Antigravity app and sign in once, then try switching again.';
+const PROJECT_ID_MISSING_MESSAGE =
+  'This account is missing an Antigravity project ID. This may happen if the account has not signed in to the Antigravity app before. Please sign in once in the Antigravity app, then return to this tool and try switching again.';
 
 function createT(): TFunction {
   return ((key: string, options?: { defaultValue?: string }) => {
     const messages: Record<string, string> = {
       'error.antigravityStorageJsonNotFound': STORAGE_NOT_FOUND_MESSAGE,
+      'error.antigravityProjectIdMissing': PROJECT_ID_MISSING_MESSAGE,
       'error.dataMigrationFailed': 'Unable to decrypt legacy account data.',
       'error.dataMigrationHint.relogin': 'Please re-login or re-add your accounts.',
     };
@@ -39,6 +42,30 @@ describe('getLocalizedErrorMessage', () => {
 
     expect(message).toBe(STORAGE_NOT_FOUND_MESSAGE);
   });
+
+  it('explains missing enterprise project_id switch failures', () => {
+    const message = getLocalizedErrorMessage(
+      new Error(
+        'Switch failed: Account user@example.com cannot be switched safely: enterprise OAuth requires a valid project_id.',
+      ),
+      createT(),
+    );
+
+    expect(message).toBe(PROJECT_ID_MISSING_MESSAGE);
+  });
+
+  it('explains enterprise project_id auto-resolve failures', () => {
+    const message = getLocalizedErrorMessage(
+      {
+        message:
+          'Switch failed: Account user@example.com cannot be switched safely: missing enterprise project_id and auto-resolve failed (Forbidden).',
+      },
+      createT(),
+    );
+
+    expect(message).toBe(PROJECT_ID_MISSING_MESSAGE);
+  });
+
 
   it('localizes backend messages passed through ORPC data', () => {
     const message = getLocalizedErrorMessage(
