@@ -23,6 +23,8 @@ const URLS = {
   USER_INFO: 'https://www.googleapis.com/oauth2/v2/userinfo',
   AUTH: 'https://accounts.google.com/o/oauth2/v2/auth',
   LOAD_PROJECT: 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
+  SANDBOX_LOAD_PROJECT:
+    'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist',
   DAILY_LOAD_PROJECT: 'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
   FETCH_CREDITS: 'https://cloudcode-pa.googleapis.com/v1internal:fetchCredits',
 };
@@ -799,10 +801,11 @@ export class GoogleAPIService {
     let projectId: string | undefined;
     let subscriptionTier: string | undefined;
     let lastError: any;
+    const endpoints = [URLS.LOAD_PROJECT, URLS.SANDBOX_LOAD_PROJECT] as const;
 
-    for (let i = 0; i < 2; i++) {
+    for (const endpoint of endpoints) {
       try {
-        const response = await fetch(URLS.LOAD_PROJECT, {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: buildInternalApiHeaders(accessToken),
           body: JSON.stringify(body),
@@ -819,11 +822,25 @@ export class GoogleAPIService {
           break;
         } else {
           lastError = new Error(`HTTP ${response.status}: ${await response.text()}`);
+          if (endpoint === URLS.LOAD_PROJECT && response.status === 429) {
+            logger.warn(
+              '[GoogleAPIService] Prod loadCodeAssist returned 429, falling back to sandbox endpoint',
+            );
+            break;
+          }
         }
       } catch (error) {
         lastError = error;
-        logger.warn(`[GoogleAPIService] Failed to fetch project ID (Attempt ${i + 1}):`, error);
+        logger.warn(`[GoogleAPIService] Failed to fetch project ID from ${endpoint} `, error);
         await sleep(500);
+      }
+
+      if (projectId || subscriptionTier) {
+        break;
+      }
+
+      if (endpoint !== URLS.LOAD_PROJECT || !String(lastError?.message).startsWith('HTTP 429')) {
+        break;
       }
     }
 
@@ -914,7 +931,17 @@ export class GoogleAPIService {
    * Core logic: Fetches detailed model quota information.
    */
   static async fetchQuota(accessToken: string, proxyUrl?: string): Promise<QuotaData> {
-    const { projectId, subscriptionTier } = await this.fetchProjectContext(accessToken, proxyUrl);
+    let projectContext: ProjectContext = {};
+    try {
+      projectContext = await this.fetchProjectContext(accessToken, proxyUrl);
+    } catch (error) {
+      logger.warn(
+        '[GoogleAPIService] Project context unavailable; continuing quota lookup without project',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    const { projectId, subscriptionTier } = projectContext;
 
     const payload: Record<string, unknown> = projectId ? { project: projectId } : {};
     let lastError: Error | null = null;

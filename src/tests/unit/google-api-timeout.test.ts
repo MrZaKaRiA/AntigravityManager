@@ -449,6 +449,90 @@ describe('GoogleAPIService fetchQuota fallback policy', () => {
 
     delete process.env.ELECTRON_PROXY_SERVER;
   });
+
+  it('continues quota lookup without project when loadCodeAssist transport fails', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          models: {
+            'gemini-3-flash': {
+              quotaInfo: {
+                remainingFraction: 0.65,
+                resetTime: '2026-05-05T00:00:00Z',
+              },
+            },
+          },
+        }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { ConfigManager } = await import('@/modules/config/ipc/manager');
+    vi.spyOn(ConfigManager, 'loadConfig').mockReturnValue({
+      proxy: {
+        upstream_proxy: {
+          enabled: false,
+        },
+      },
+    } as any);
+
+    const { GoogleAPIService } = await import('@/modules/cloud-account/services/GoogleAPIService');
+
+    await expect(GoogleAPIService.fetchQuota('access-token')).resolves.toMatchObject({
+      models: {
+        'gemini-3-flash': {
+          percentage: 65,
+          resetTime: '2026-05-05T00:00:00Z',
+        },
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({}));
+  });
+
+  it('falls back to sandbox loadCodeAssist when prod returns 429', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: vi.fn().mockResolvedValue('RESOURCE_EXHAUSTED'),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          cloudaicompanionProject: 'sandbox-project',
+        }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { ConfigManager } = await import('@/modules/config/ipc/manager');
+    vi.spyOn(ConfigManager, 'loadConfig').mockReturnValue({
+      proxy: {
+        upstream_proxy: {
+          enabled: false,
+        },
+      },
+    } as any);
+
+    const { GoogleAPIService } = await import('@/modules/cloud-account/services/GoogleAPIService');
+
+    await expect(GoogleAPIService.fetchProjectId('access-token')).resolves.toBe('sandbox-project');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist',
+    );
+  });
 });
 
 describe('QuotaService fallback policy', () => {
