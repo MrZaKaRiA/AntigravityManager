@@ -58,7 +58,10 @@ ipcMain.on(IPC_CHANNELS.CHANGE_LANGUAGE, (event, lang) => {
   setTrayLanguage(lang);
 });
 
-app.disableHardwareAcceleration();
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration();
+  logger.info('Hardware acceleration disabled for Linux startup stability');
+}
 
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('disable-gpu');
