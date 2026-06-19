@@ -2,6 +2,26 @@
 
 # Changelog
 
+## [0.18.0](https://github.com/Draculabo/AntigravityManager/compare/v0.17.1...v0.18.0) (2026-06-19)
+
+### ✨ Features
+
+* **account:** support agy CLI switch target ([591e0d0](https://github.com/Draculabo/AntigravityManager/commit/591e0d05030b5a4d76692537671487bc7d8f990f))
+* add configurable AI credits low-amount alert to cloud monitor ([#204](https://github.com/Draculabo/AntigravityManager/issues/204)) ([0a528ad](https://github.com/Draculabo/AntigravityManager/commit/0a528ad4509acf3824de69fbc21b385740151b87)), closes [#134](https://github.com/Draculabo/AntigravityManager/issues/134)
+* **cloud-account:** support grouped quotas and safer Antigravity state handling ([95e01b4](https://github.com/Draculabo/AntigravityManager/commit/95e01b46e6731e3bad9256b530aed91b3d27053f))
+
+### 🐛 Bug Fixes
+
+* **cloud-account:** clear stale IDE OAuth state on switch ([0603855](https://github.com/Draculabo/AntigravityManager/commit/06038552ecd08eee0a189c3d42cb28c1fca5613a))
+* **electron:** make preload sandbox-compatible ([36caa05](https://github.com/Draculabo/AntigravityManager/commit/36caa05ea1a54a47c64f5f4ea35f4754c903c2e1))
+* **proxy:** disable thinking for unsupported Gemini Pro tiers ([697b967](https://github.com/Draculabo/AntigravityManager/commit/697b9678d53d8f48f2b0f71f33230be339c36a69))
+* **proxy:** fallback loadCodeAssist on 429 and guard quota backoff ([8ce0d5d](https://github.com/Draculabo/AntigravityManager/commit/8ce0d5df0211001f9f31fc6a9f59b146c43f5df7))
+* **proxy:** strip unsupported tools field from schemas ([db80820](https://github.com/Draculabo/AntigravityManager/commit/db8082069dd1e5daf1926c3fb08b8c4e920192b6))
+* **security:** fail closed for admin guard and disable renderer node integration ([cb0eec6](https://github.com/Draculabo/AntigravityManager/commit/cb0eec6c4f5069e8a5da5df9829477b9ae10ff1f))
+* **updater:** handle BOM in Windows Squirrel RELEASES feed ([7f69885](https://github.com/Draculabo/AntigravityManager/commit/7f69885e3654ccb7109b7f01799aad32a579cb80))
+* **updater:** publish per-arch Windows Squirrel feeds ([bd13ca2](https://github.com/Draculabo/AntigravityManager/commit/bd13ca23d3f8068ba241f14b6f9548724326e686))
+* **updater:** publish Windows Squirrel feeds without large git assets ([7413bcb](https://github.com/Draculabo/AntigravityManager/commit/7413bcb426294bf3fa53c1cde5cf6fe500c3792a))
+
 ## [0.17.1](https://github.com/Draculabo/AntigravityManager/compare/v0.17.0...v0.17.1) (2026-06-16)
 
 ### 🐛 Bug Fixes
