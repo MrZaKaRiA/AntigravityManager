@@ -2,6 +2,12 @@
 
 # Changelog
 
+## [0.18.1](https://github.com/Draculabo/AntigravityManager/compare/v0.18.0...v0.18.1) (2026-06-21)
+
+### 🐛 Bug Fixes
+
+* **electron:** align renderer isolation model for Windows compatibility ([60869d8](https://github.com/Draculabo/AntigravityManager/commit/60869d84db66e6f506a24327111262a91c8ae37a))
+
 ## [0.18.0](https://github.com/Draculabo/AntigravityManager/compare/v0.17.1...v0.18.0) (2026-06-19)
 
 ### ✨ Features
