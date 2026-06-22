@@ -1066,10 +1066,12 @@ describe('cloud switch fail-fast path', () => {
         devDeviceId: 'prev-dev',
         sqmId: '{PREV-SQM}',
       })),
+      syncTelemetryServiceMachineIdValue: vi.fn(),
     }));
 
     vi.doMock('@/modules/antigravity-runtime/ipc/handler', () => ({
       closeAntigravity: vi.fn(async () => undefined),
+      isProcessRunning: vi.fn(async () => true),
       startAntigravity: startAntigravityMock,
       _waitForProcessExit: vi.fn(async () => undefined),
     }));

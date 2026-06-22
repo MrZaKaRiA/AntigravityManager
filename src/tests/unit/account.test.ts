@@ -79,6 +79,7 @@ vi.mock('@/modules/identity-profile/ipc/handler', () => ({
     sqmId: '{CURRENT-SQM-ID}',
   })),
   saveGlobalOriginalProfile: vi.fn(),
+  syncTelemetryServiceMachineIdValue: vi.fn(),
 }));
 
 describe('Account Handler', () => {

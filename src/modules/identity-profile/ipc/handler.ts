@@ -6,7 +6,11 @@ import { isBoolean, isNumber, isObjectLike, isString } from 'lodash-es';
 import type { AntigravityAppTarget } from '@/modules/account/types';
 import type { DeviceProfile } from '@/modules/identity-profile/types';
 import { logger } from '@/shared/logging/logger';
-import { getAgentDir, getAntigravityDbPaths, getAntigravityStoragePaths } from '@/shared/platform/paths';
+import {
+  getAgentDir,
+  getAntigravityDbPaths,
+  getAntigravityStoragePaths,
+} from '@/shared/platform/paths';
 
 const GLOBAL_BASELINE_FILE = 'device_original.json';
 const SQLITE_RETRY_COUNT = 3;
@@ -16,10 +20,8 @@ const LAST_KNOWN_GOOD_STATE_DB_FILE = 'state.vscdb';
 const LAST_KNOWN_GOOD_MARKER_FILE = 'marker.json';
 const DEVICE_HARDENING_SAFE_MODE_THRESHOLD = 3;
 const DEVICE_HARDENING_SAFE_MODE_DURATION_MS = 5 * 60 * 1000;
-const STATE_SERVICE_MACHINE_ID_KEYS = [
-  'storage.serviceMachineId',
-  'telemetry.serviceMachineId',
-] as const;
+const STORAGE_SERVICE_MACHINE_ID_KEY = 'storage.serviceMachineId';
+const TELEMETRY_SERVICE_MACHINE_ID_KEY = 'telemetry.serviceMachineId';
 
 export type DeviceApplyFailureReason =
   | 'backup_failed'
@@ -104,6 +106,14 @@ function getExistingPath(paths: string[]): string | null {
   return null;
 }
 
+function stripUtf8Bom(content: string): string {
+  if (content.charCodeAt(0) === 0xfeff) {
+    return content.slice(1);
+  }
+
+  return content;
+}
+
 function randomHex(length: number): string {
   return randomBytes(Math.ceil(length / 2))
     .toString('hex')
@@ -161,7 +171,7 @@ function readLastKnownGoodMarker(): LastKnownGoodMarker | null {
 }
 
 function parseStorageJson(storagePath: string): Record<string, unknown> {
-  const content = fs.readFileSync(storagePath, 'utf-8');
+  const content = stripUtf8Bom(fs.readFileSync(storagePath, 'utf-8'));
   const parsed = JSON.parse(content);
   if (!isObjectLike(parsed) || Array.isArray(parsed)) {
     throw new Error('storage.json top-level value must be an object');
@@ -258,11 +268,20 @@ function ensureStateServiceMachineIdApplied(serviceMachineId: string, dbPath: st
   }
 }
 
-function writeStateServiceMachineIdValues(db: Database.Database, serviceMachineId: string): void {
+function writeStateStorageServiceMachineIdValue(
+  db: Database.Database,
+  serviceMachineId: string,
+): void {
   const statement = db.prepare('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)');
-  for (const key of STATE_SERVICE_MACHINE_ID_KEYS) {
-    statement.run(key, serviceMachineId);
-  }
+  statement.run(STORAGE_SERVICE_MACHINE_ID_KEY, serviceMachineId);
+}
+
+function writeStateTelemetryServiceMachineIdValue(
+  db: Database.Database,
+  serviceMachineId: string,
+): void {
+  const statement = db.prepare('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)');
+  statement.run(TELEMETRY_SERVICE_MACHINE_ID_KEY, serviceMachineId);
 }
 
 function cleanupPathIfExists(targetPath: string): void {
@@ -622,7 +641,46 @@ export function syncStateServiceMachineIdValue(
       db = new Database(targetDbPath);
       db.pragma('busy_timeout = 3000');
       db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT);');
-      writeStateServiceMachineIdValues(db, serviceMachineId);
+      writeStateStorageServiceMachineIdValue(db, serviceMachineId);
+      return;
+    } catch (error) {
+      if (isSqliteBusyError(error) && attempt < SQLITE_RETRY_COUNT) {
+        logger.warn(`state.vscdb busy, retrying (${attempt}/${SQLITE_RETRY_COUNT})`, error);
+        continue;
+      }
+      throw error;
+    } finally {
+      if (db) {
+        db.close();
+      }
+    }
+  }
+
+  throw new Error('sync_state_service_machine_id_failed');
+}
+
+export function syncTelemetryServiceMachineIdValue(
+  serviceMachineId: string,
+  dbPath?: string,
+  appTarget?: AntigravityAppTarget,
+): void {
+  const targetDbPath = dbPath || getExistingPath(getAntigravityDbPaths(appTarget));
+  if (!targetDbPath) {
+    throw new Error('state_vscdb_not_found');
+  }
+
+  const targetDbDir = path.dirname(targetDbPath);
+  if (!fs.existsSync(targetDbDir)) {
+    fs.mkdirSync(targetDbDir, { recursive: true });
+  }
+
+  for (let attempt = 1; attempt <= SQLITE_RETRY_COUNT; attempt += 1) {
+    let db: Database.Database | null = null;
+    try {
+      db = new Database(targetDbPath);
+      db.pragma('busy_timeout = 3000');
+      db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT);');
+      writeStateTelemetryServiceMachineIdValue(db, serviceMachineId);
       return;
     } catch (error) {
       if (isSqliteBusyError(error) && attempt < SQLITE_RETRY_COUNT) {

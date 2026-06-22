@@ -577,6 +577,7 @@ export async function switchCloudAccount(
       }
 
       logger.info(`Switching to cloud account: ${account.email} (${account.id})`);
+      const usesCredentialStore = CloudAccountRepo.shouldInjectTokenIntoCredentialStore(appTarget);
       await withTimingTrace(
         'switch.cloud.prepare',
         {
@@ -589,7 +590,10 @@ export async function switchCloudAccount(
           });
 
           trace.phaseSync('deviceProfileSetupMs', () => {
-            ensureGlobalOriginalFromCurrentStorage(appTarget);
+            if (appTarget !== 'agy') {
+              ensureGlobalOriginalFromCurrentStorage(appTarget);
+            }
+
             if (!account.device_profile) {
               const generated = generateDeviceProfile();
               CloudAccountRepo.setDeviceBinding(account.id, generated, 'auto_generated');
@@ -646,12 +650,11 @@ export async function switchCloudAccount(
         appTarget,
         targetProfile: account.device_profile || null,
         applyFingerprint: isIdentityProfileApplyEnabled(),
+        useCredentialStore: usesCredentialStore,
         processExitTimeoutMs: 10000,
         skipRefreshProcessCache: true,
         performSwitch: async () => {
-          const injectionMode = CloudAccountRepo.shouldInjectTokenIntoCredentialStore(appTarget)
-            ? 'credential-store'
-            : 'sqlite';
+          const injectionMode = usesCredentialStore ? 'credential-store' : 'sqlite';
 
           if (injectionMode === 'sqlite') {
             // 3. Backup Database (Optimized to avoid race conditions)
@@ -674,8 +677,8 @@ export async function switchCloudAccount(
 
           // 4. Inject Token
           CloudAccountRepo.injectCloudTokenWithStorageStrategy(account, appTarget);
-
-          // 5. Update usage and active status
+        },
+        afterSwitchSuccess: async () => {
           CloudAccountRepo.updateLastUsed(account.id);
           CloudAccountRepo.setActive(account.id);
           CloudAccountRepo.setActiveForTarget(appTarget, account.id);

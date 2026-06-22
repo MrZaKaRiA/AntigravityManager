@@ -262,33 +262,38 @@ export async function switchAccount(
       throw new Error(`Backup file not found: ${backupPath}`);
     }
 
-    ensureGlobalOriginalFromCurrentStorage(appTarget);
+    if (appTarget !== 'agy') {
+      ensureGlobalOriginalFromCurrentStorage(appTarget);
+    }
     if (!account.deviceProfile) {
       const generated = generateDeviceProfile();
       saveGlobalOriginalProfile(generated);
       bindDeviceProfileToAccount(account, generated, 'auto_generated', true);
     }
 
+    const usesCredentialStore = CloudAccountRepo.shouldInjectTokenIntoCredentialStore(appTarget);
+
     await executeSwitchFlow({
       scope: 'local',
       appTarget,
       targetProfile: account.deviceProfile || null,
       applyFingerprint: isIdentityProfileApplyEnabled(),
+      useCredentialStore: usesCredentialStore,
       processExitTimeoutMs: SWITCH_EXIT_TIMEOUT_MS,
       performSwitch: async () => {
         // NOTE Load backup file
         const backupContent = fs.readFileSync(backupPath, 'utf-8');
         const backupData: AccountBackupData = JSON.parse(backupContent);
 
-        if (CloudAccountRepo.shouldInjectTokenIntoCredentialStore(appTarget)) {
+        if (usesCredentialStore) {
           const token = extractCredentialStoreTokenFromBackup(backupData);
           writeAntigravityCredentialStoreToken(token);
         } else {
           // NOTE Restore data to DB
           dbRestore(backupData, appTarget);
         }
-
-        // NOTE Update last used
+      },
+      afterSwitchSuccess: async () => {
         account.last_used = new Date().toISOString();
         saveAccountsIndex(accounts);
       },
